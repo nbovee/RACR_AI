@@ -12,6 +12,8 @@ services:
     build:
       context: ../
       dockerfile: Dockerfile.cuda
+      args: 
+        branch: remote
     image: colab-vision-remote-cuda
     container_name: remote-cuda-localtest
 #   ports:
@@ -30,6 +32,8 @@ services:
     build:
       context: ../
       dockerfile: Dockerfile.no-cuda
+      args: 
+        branch: client
     image: colab-vision-client-no-cuda
     container_name: client-no-cuda-localtest
 #   ports:
@@ -48,6 +52,6 @@ services:
 
 networks:
 
-  my-virtual-network:
+  local-bridge-network:
     driver: bridge  # Use the default bridge network driver
 

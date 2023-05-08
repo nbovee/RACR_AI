@@ -1,9 +1,12 @@
+# stores argument given to call from terminal or docker-compose file
 ARG branch
 
-FROM nvcr.io/nvidia/pytorch:21.08-py3 AS base
+# using slim python 3.7 image to keep size down
+FROM arm32v7/python:3.7-slim-buster AS base
 
 WORKDIR /usr/src/app
 
+# new way of installing Pytorch - custom build URL included in requirements.txt
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install seaborn thop
@@ -11,15 +14,16 @@ EXPOSE 3000
 
 COPY . .
 
+# depending on $branch argument, the final container type is chosen
+
 FROM base AS client
 CMD [ "python", "./client/grpc_testing_client.py" ]
 ENV version_name "grpc_client"
-
 
 FROM base AS remote
 CMD [ "python", "./remote/grpc_testing_remote.py" ]
 ENV version_name "grpc_remote"
 
-
 FROM ${branch} AS final
 RUN echo "Built ${version_name} image."
+
