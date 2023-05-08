@@ -2,7 +2,7 @@
 ARG branch
 
 # using slim python 3.7 image to keep size down
-FROM arm32v7/python:3.7-slim-buster AS base
+FROM arm64v8/python:3.7-slim-buster AS base
 
 WORKDIR /usr/src/app
 
