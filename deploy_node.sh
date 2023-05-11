@@ -29,6 +29,9 @@ while getopts ":nr" opt; do
   esac
 done
 
+# set an environment variable so Python knows where to look for wheel files
+export REQUIREMENTS_RELATIVE_PATH=$( pwd )
+
 # Define the image name
 IMAGE_NAME="colab-vision-$BUILD_ARG-$HARDWARE"
 
