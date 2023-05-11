@@ -8,7 +8,6 @@ WORKDIR /usr/src/app
 
 # new way of installing Pytorch - custom build URL included in requirements.txt
 COPY requirements.txt ./
-COPY wheel_files/ ./
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install seaborn thop
 EXPOSE 3000
