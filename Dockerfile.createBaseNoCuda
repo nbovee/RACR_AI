@@ -1,11 +1,11 @@
 # using slim Python 3.7 image as base to keep size down
-FROM arm64v8/python:3.7 AS base
+FROM arm64v8/python:3.7-slim-buster AS base
 
 WORKDIR /app
 
 COPY . .
 
-RUN sudo apt-get install build-essential
+RUN apt-get update && apt-get install -y build-essential
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install seaborn thop
 
