@@ -143,5 +143,5 @@ libcudnn8-dev_8.4.0.27-1+cuda11.6_amd64.deb
 device_info
 
 # Docker image tarballs are too large for the 1MB GitHub filesize limit
-docker_images/*.tar
+api/Docker_images/*.tar
 
