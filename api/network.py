@@ -53,6 +53,11 @@ class Device:
             print(f"An error occurred while getting the hostname: {e}")
             return None
 
+    def set_up_passwordless_ssh(self):
+        """Sets up passwordless ssh on the device"""
+        # TODO: implement
+        pass
+
     def is_setup(self):
         """Returns True if the device is ready to be deployed to"""
         # TODO:
