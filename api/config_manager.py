@@ -2,6 +2,7 @@ import pathlib
 import re
 import json
 import os
+import shutil
 from singleton_decorator import singleton
 
 from exceptions import InvalidConfigFileException
@@ -64,8 +65,6 @@ class ConfigManager:
             with open(pref_conf_path, "w") as file:
                 json.dump(self.preferences, file, indent=8)
 
-    def 
-
 
 class AbstractConfigSection:
 
@@ -93,13 +92,12 @@ class AbstractConfigSection:
     """
 
     def __init__(self, child_name, data_file=None):
-        self.child_name = child_name
         self.api_path = pathlib.Path(__file__).parent.absolute()
-        self.default_data_fp = pathlib.Path(self.setup_data
-                                                .get(self.child_name)
-                                                .get("default_path"))
         with open(self.api_path / "setup_data.json", "r") as file:
             self.setup_data = json.load(file)
+        self.child_name = child_name
+        default_str = self.setup_data.get(self.child_name).get("default_path")
+        self.default_data_fp = pathlib.Path(default_str)
         self.data_file = data_file
         self.save_to = self.data_file
         self.top_level_keys = set(
@@ -158,10 +156,12 @@ class AbstractConfigSection:
         """Builds a fresh config data dict."""
 
         if not save_to and not self.data_file:
+            save_to = 
 
 
     def save(self, to=None):
         """Saves the config data to disk."""
+        
 
         if to:
             self.save_to = to
