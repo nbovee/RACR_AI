@@ -9,4 +9,4 @@ fi
 HOST_IP=$1
 PORT=$2
 
-docker run -p $PORT:$PORT -v ./test_results:/usr/src/app/test_results -e HOST_IP=$HOST_IP -e PORT=$PORT -e PYTHONUNBUFFERED=1 --memory=500m nocuda-client-oas
+docker run -p $PORT:$PORT -v ./test_results:/usr/src/app/test_results -e HOST_IP=$HOST_IP -e PORT=$PORT -e PYTHONUNBUFFERED=1 --memory=600m --memory-swap=-1 --cpus 1 nocuda-client-oas

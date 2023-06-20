@@ -1,0 +1,9 @@
+seaborn
+thop
+blosc2
+grpcio-tools
+numpy
+pandas
+Pillow
+protobuf
+

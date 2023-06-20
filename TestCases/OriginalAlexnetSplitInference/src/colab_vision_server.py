@@ -29,7 +29,7 @@ class FileServer(colab_vision_pb2_grpc.colab_visionServicer):
                 self.tmp_folder = "./temp/"
                 self.model = alex.Model(mode=server_mode)
 
-            def constantInference(self, request_iterator):
+            def constantInference(self, request_iterator, context):
                 # unpack msg contents
                 current_chunks = []
                 last_id = None

@@ -26,6 +26,7 @@ class test_data_loader(data_wrapper):
                 + f"\t\t({len(self.image_list)} remaining)"
             )
             for i in range(1, 21):
+                print(f"\tLayer {i} split test in process")
                 # hardcoded split layers for AlexNet - no full processing yet.
                 # Layer 0 would be full server, 21 would be full client
                 yield [val, i, filename]
@@ -34,6 +35,8 @@ class test_data_loader(data_wrapper):
         max_images = 1000
         self.image_list.clear()
         for image in glob.iglob(f"{str(path)}/{fn_glob_pattern}"):
+            img_count = len(self.image_list)
+            print(f"Loading image files to memory. {img_count} done so far.", end="\r")
             self.image_list.append([Image.open(image).convert("RGB"), image])
-            if len(self.image_list) >= max_images:
+            if img_count >= max_images:
                 break
