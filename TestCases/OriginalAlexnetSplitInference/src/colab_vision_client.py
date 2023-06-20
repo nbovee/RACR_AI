@@ -23,7 +23,7 @@ from . import colab_vision_pb2_grpc
 
 
 client_mode = "cpu"
-test_results_dir = pathlib.Path.cwd().parent / "test_results"
+test_results_dir = pathlib.Path(sys.path[0]) / "test_results"
 
 
 class FileClient:

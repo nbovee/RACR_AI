@@ -1,0 +1,26 @@
+# using base image previously saved as .tar
+FROM no-cuda-client-base AS base
+
+# arguments passed during the docker run command
+ARG HOST_IP
+ARG PORT
+
+# set working directory within container
+WORKDIR /usr/src/app
+
+# install any new packages required on top of what's included in base
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install seaborn thop
+EXPOSE 3000
+
+COPY . .
+
+# execute the default script with arguments
+FROM base AS client
+CMD python run_client.py ${HOST_IP} ${PORT}
+
+# build-time update message (not executed at runtime)
+ENV version_name "grpc_client"
+RUN echo "Built ${version_name} image."
+

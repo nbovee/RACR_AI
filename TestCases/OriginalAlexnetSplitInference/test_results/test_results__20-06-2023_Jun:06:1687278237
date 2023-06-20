@@ -1,0 +1,9 @@
+,0689dd38ae8749b4b129b96c0409a69a
+client_compression_time,1687278217.935924
+client_mode,cpu
+client_predict_time,1687278217.9335804
+client_start_time,1687278217.914477
+client_tensor_raw_bytes,6195200
+compression_level,9
+filename,/home/stevepic95/Source/AVResearch/RACR_AI/TestCases/OriginalAlexnetSplitInference/test/n02091467_Norwegian_elkhound.JPEG
+split_layer,1
