@@ -5,7 +5,7 @@ import sys
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("Usage: python3 file.py <IP> <port>")
+        print("Usage: python3 run_client.py <IP> <port>")
         exit(1)
     client = cv.FileClient(sys.argv[1] + ":" + sys.argv[2])
     atexit.register(client.safeClose)
