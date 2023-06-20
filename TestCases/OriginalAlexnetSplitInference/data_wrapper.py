@@ -1,6 +1,6 @@
-class data_wrapper():
-    def has_next():
+class data_wrapper:
+    def has_next(self):
         raise Exception("not yet implemented")
 
-    def next():
+    def next(self):
         raise Exception("not yet implemented")
