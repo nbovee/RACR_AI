@@ -16,7 +16,7 @@ COPY . .
 
 # runtime script takes arguments from docker run command
 FROM base AS remote
-CMD python run_server.py ${HOST}
+CMD python run_server.py ${PORT}
 
 # build-time update, does not execute at runtime
 ENV version_name "grpc_remote"

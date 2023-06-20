@@ -6,6 +6,6 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
-PORT=$2
+PORT=$1
 
-nvidia-docker run --gpus all --ipc=host -p 8893:8893 -e PORT=$PORT cuda-remote-oas
+nvidia-docker run --gpus all --ipc=host -p $PORT:$PORT -e PORT=$PORT -e PYTHONUNBUFFERED=1 cuda-remote-oas

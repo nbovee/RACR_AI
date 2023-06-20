@@ -9,4 +9,4 @@ fi
 HOST_IP=$1
 PORT=$2
 
-docker run -p 8893:8893 -v ./test_results:/usr/src/app/test_results -e HOST_IP=$HOST_IP -e PORT=$PORT nocuda-client-oas
+docker run -p 8893:8893 -v ./test_results:/usr/src/app/test_results -e HOST_IP=$HOST_IP -e PORT=$PORT -e PYTHONUNBUFFERED=1 nocuda-client-oas

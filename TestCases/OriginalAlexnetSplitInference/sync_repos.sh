@@ -5,7 +5,7 @@ RPI_IPS=("192.168.1.201" "192.168.1.202" "192.168.1.203")
 
 # Define the source and target directories
 SOURCE_DIR="."
-TARGET_DIR="/home/racr/collab-vision"
+TARGET_DIR="/home/racr/RACR_AI"
 
 # Loop through the IP addresses and sync the repositories
 for ip in "${RPI_IPS[@]}"; do
