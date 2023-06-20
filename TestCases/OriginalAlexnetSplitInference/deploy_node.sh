@@ -6,13 +6,13 @@
 # communicates with other nodes on the network using the gRPC protocol.
 #
 # USAGE:
-#			./deploy_node [FLAGS] SUFFIX
+#		./deploy_node [FLAGS] SUFFIX
 #
 # FLAGS:
-# 	-n		"no CUDA"	Use for hosts without CUDA support (like the Pi 3)
-#	-r		"remote"	Deploys a remote/server host (rather than client)
-#	-a		"arm64"		Use for arm64 hosts (default is x86)
-#	-t		"terminal"	Opens an interactive terminal session inside the container
+# 	-n		"no CUDA"	  Use for hosts without CUDA support (like the Pi 3)
+#	  -r		"remote"	  Deploys a remote/server host (rather than client)
+#	  -a		"arm64"		  Use for arm64 hosts (default is x86)
+#	  -t		"terminal"	Opens an interactive terminal session inside the container
 #
 # SUFFIX
 #			The suffix is a required argument that tells the script how to find
@@ -34,27 +34,27 @@ ARCH="x86"
 TERMINAL="false"
 
 # parse through flags
-while getopts ":nr" opt; do
+while getopts ":nrat" opt; do
   case $opt in
     n)
       CUDA_STATE="nocuda"
       ;;
     r)
       BUILD_ARG="remote"
-	  ;;
-	a)
+      ;;
+    a)
       ARCH="arm64"
       ;;
-	t)
-	  TERMINAL="true"
-	  ;;
-	  
+    t)
+      TERMINAL="true"
+      ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
       exit 1
       ;;
   esac
 done
+
 
 # Remove the processed options
 shift $((OPTIND-1))
