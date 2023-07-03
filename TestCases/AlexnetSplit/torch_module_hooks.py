@@ -33,20 +33,19 @@ class WrappedModel(nn.Module):
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ]
 )
-        self.pretrained = models.alexnet(pretrained=True)
+        # self.pretrained = models.alexnet(pretrained=True)
+        self.pretrained = models.resnet18()
         self.start_layer_index = 0 # inference will be started at this layer.
         self.ignore_layer_index = len(list(self.pretrained._modules.keys())) # will not perform inference at this layer or above
         self.layer_count = 0
-        self.selected_out = OrderedDict()
-        self.fhooks = []
+        self.selected_out = OrderedDict() # could be useful for skips
+        self.f_hooks = []
+        self.f_pre_hooks = []
 
         # Cant simply profile from a hook due to the possibility of skip connections
         # Similarly, we dont use the global register for hooks because we need more information for our profiling
         self.walk_modules(self.pretrained._modules)
-        # for i,l in enumerate(list(self.pretrained._modules)):
-        #     # if i in self.output_layers:
 
-            # self.fhooks.append(getattr(self.pretrained,l).register_forward_hook(self.forward_posthook(l)))
         if self.mode == "eval":
             self.pretrained.eval()
         if self.device == "cuda":
@@ -73,8 +72,8 @@ class WrappedModel(nn.Module):
             # if not iterable, we have found a layer to hook
             print(f"Layer {self.layer_count}: {str(module).split('(')[0]} hooks applied.")
             # there must be a better way to get names but not needed atm
-            module.register_forward_pre_hook(self.forward_prehook(self.layer_count, str(module).split('(')[0], (0, 0)))
-            module.register_forward_hook(self.forward_posthook(self.layer_count, str(module).split('(')[0], (0, 0)))
+            self.f_hooks.append(module.register_forward_pre_hook(self.forward_prehook(self.layer_count, str(module).split('(')[0], (0, 0))))
+            self.f_pre_hooks.append(module.register_forward_hook(self.forward_posthook(self.layer_count, str(module).split('(')[0], (0, 0))))
             # back hooks left out for now
             self.layer_count += 1
 
@@ -101,8 +100,10 @@ class WrappedModel(nn.Module):
         """Wraps the pretrained forward pass to utilize our slicing."""
         start, end = self.enforce_bounds(start, end)
         net_for_pass = self.pretrained
-        # the below could incur some overhead and will need tests
-        # net_for_pass = nn.Sequential(*net_for_pass[start:end])
+        # Alexnet can be easily set up into a sliceable structure, but more complex networks may not be possbile without custom forward passes.
+        # For benchmarking, it would be possible to await a Tensor from a pre-hook, but that is not practical for actual use.
+        # Need discussing with Algo Team.
+        net_for_pass = nn.Sequential(*net_for_pass[start:end])
         with torch.no_grad():
             out = net_for_pass(x)
         return out
@@ -137,11 +138,9 @@ class WrappedModel(nn.Module):
             print("Warmup not required.")
         else:
             print("Starting warmup.")
-            imarray = np.random.rand(*self.base_input_size, 3) * 255
             with torch.no_grad():
                 for i in range(iterations):
-                    warmup_image = Image.fromarray(imarray.astype("uint8")).convert("RGB")
-                    _ = self(self.parse_input(warmup_image))
+                    _ = self(torch.randn(1,3, *self.base_input_size))
             print("Warmup complete.")
 
     def prune_layers(newlow, newhigh):
@@ -150,7 +149,7 @@ class WrappedModel(nn.Module):
 
     def safeClose(self):
         df = pd.DataFrame(data=self.baseline_dict)
-        df.to_csv("./test_results/test_results-desktop_cuda.csv")
+        df.to_csv(f"./test_results/test_results-desktop_cuda{time.time()}.csv")
         torch.cuda.empty_cache()
 
 class Model:
@@ -168,7 +167,7 @@ class Model:
 if __name__ == "__main__":
     # running as main will test baselines on the running platform
     m = WrappedModel(mode="cuda")
-    # atexit.register(m.safeClose)
+    atexit.register(m.safeClose)
     m.baseline_dict = {}
     test_data = data_loader()
     i = 0
