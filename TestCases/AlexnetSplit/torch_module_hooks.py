@@ -9,7 +9,7 @@ import time
 import pandas as pd
 from test_data import test_data_loader as data_loader
 import atexit
-from collections import OrderedDict 
+from collections import OrderedDict
 
 # from torchvision.models.utils import load_state_dict_from_url
 # from typing import Type, Any, Callable, Union, List, Optional, cast
@@ -17,9 +17,10 @@ from collections import OrderedDict
 class WrappedModel(nn.Module):
     """Wraps a pretrained model with the features necesarry to perform edge computing tests. Uses pytorch
     hooks to perform benchmarkings, grab intermediate layers, and slice the Sequential to provide input to intermediate layers or exit early. """
-    def __init__(self, *args):
+    def __init__(self, *args, **kwargs):
+        print(*args)
         super().__init__(*args)
-        self.device = "cpu"
+        self.device = kwargs.get('mode',"cpu")
         self.mode = "eval"
         self.dataset = "imagenet"
         self.num_output_layers = None # not needed?
@@ -32,16 +33,20 @@ class WrappedModel(nn.Module):
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ]
 )
-        self.start_layer_index = 0 # inference will be started at this layer.
-        self.ignore_layer_index = np.inf # will not perform inference at this layer or above
-        self.selected_out = OrderedDict()
         self.pretrained = models.alexnet(pretrained=True)
+        self.start_layer_index = 0 # inference will be started at this layer.
+        self.ignore_layer_index = len(list(self.pretrained._modules.keys())) # will not perform inference at this layer or above
+        self.layer_count = 0
+        self.selected_out = OrderedDict()
         self.fhooks = []
 
-        for i,l in enumerate(list(self.pretrained._modules.keys())):
-            # if i in self.output_layers:
-            print(f"Detected layer layer {i}: {l}")
-            self.fhooks.append(getattr(self.pretrained,l).register_forward_hook(self.forward_posthook(l)))
+        # Cant simply profile from a hook due to the possibility of skip connections
+        # Similarly, we dont use the global register for hooks because we need more information for our profiling
+        self.walk_modules(self.pretrained._modules)
+        # for i,l in enumerate(list(self.pretrained._modules)):
+        #     # if i in self.output_layers:
+
+            # self.fhooks.append(getattr(self.pretrained,l).register_forward_hook(self.forward_posthook(l)))
         if self.mode == "eval":
             self.pretrained.eval()
         if self.device == "cuda":
@@ -51,37 +56,62 @@ class WrappedModel(nn.Module):
                 print("Loading Model to CPU. CUDA not available.")
                 self.device = "cpu"
         self.pretrained.to(self.device)
-        self.warmup()
+        self.warmup(iterations=1)
         
+    def walk_modules(self, module):
+        '''Recursively walks and marks Modules for hooks in a DFS'''
+        if isinstance(module, (nn.Sequential, nn.ModuleList, OrderedDict)):
+            # if iterable, we want to go deeper
+            for i in module:
+                if isinstance(module, OrderedDict):
+                    # custom recursion for OrderedDicts
+                    self.walk_modules(module[i])
+                else:
+                    self.walk_modules(i)
+            
+        elif isinstance(module, nn.Module):
+            # if not iterable, we have found a layer to hook
+            print(f"Layer {self.layer_count}: {str(module).split('(')[0]} hooks applied.")
+            # there must be a better way to get names but not needed atm
+            module.register_forward_pre_hook(self.forward_prehook(self.layer_count, str(module).split('(')[0], (0, 0)))
+            module.register_forward_hook(self.forward_posthook(self.layer_count, str(module).split('(')[0], (0, 0)))
+            # back hooks left out for now
+            self.layer_count += 1
 
-    def forward_posthook(self,layer_name):
+    def forward_posthook(self, layer_index, layer_name, input_shape):
         """Posthook a layer for output capture and benchmarking."""
-        def hook(module, input, output):
-            # self.selected_out[layer_name] = output
-            pass
+        def hook(module, args, output):
+            print(f"L{layer_index}-{layer_name} returned.")
         return hook
     
-    def forward_prehook(self,layer_name):
+    def forward_prehook(self, layer_index, layer_name, input_shape):
         """Prehook a layer for benchmarking."""
-        def pre_hook(module, input):
-            # return torch.zeros(input[0].shape,dtype=torch.float,device='cuda:0',requires_grad = True)
-            return input
+        def pre_hook(module, args):
+            print(f"L{layer_index}-{layer_name} called.")
         return pre_hook
 
-    def forward(self, x):
+    def enforce_bounds(self, start, end):
+        start = self.start_layer_index if start < self.start_layer_index else start
+        end = self.ignore_layer_index if end > self.ignore_layer_index else end
+        if start >= end:
+            raise Exception("Start and End indexes overlap.")
+        return start, end
+
+    def forward(self, x, start = 0, end = np.inf):
         """Wraps the pretrained forward pass to utilize our slicing."""
+        start, end = self.enforce_bounds(start, end)
         net_for_pass = self.pretrained
         # the below could incur some overhead and will need tests
-        # net_for_pass = nn.Sequential(*net[start:end])
+        # net_for_pass = nn.Sequential(*net_for_pass[start:end])
         with torch.no_grad():
             out = net_for_pass(x)
-        return out, self.selected_out
+        return out
 
     def parse_input(self, input):
         """Checks if the input is appropriate at the given stage of the network. Does not yet check Tensor shapes for intermediate layers."""
         if isinstance(input, Image.Image):
-            if input.size != self.image_size:
-                input = input.resize(self.image_size)
+            if input.size != self.base_input_size:
+                input = input.resize(self.base_input_size)
             input_tensor = self.preprocess(input)
             input_tensor = input_tensor.unsqueeze(0)
         elif isinstance(input, torch.Tensor):
@@ -102,20 +132,20 @@ class WrappedModel(nn.Module):
         prediction = self.categories[top1_catid]
         return prediction
 
-    def warmup(self, iterations=50):
-        if self.device != "cuda":
+    def warmup(self, iterations=50, force = False):
+        if self.device != "cuda" and force is not False:
             print("Warmup not required.")
         else:
             print("Starting warmup.")
-            imarray = np.random.rand(*self.image_size, 3) * 255
+            imarray = np.random.rand(*self.base_input_size, 3) * 255
             with torch.no_grad():
                 for i in range(iterations):
                     warmup_image = Image.fromarray(imarray.astype("uint8")).convert("RGB")
-                    _ = self.predict(warmup_image)
+                    _ = self(self.parse_input(warmup_image))
             print("Warmup complete.")
 
-    def prune_layers():
-        """NYE: Trim network layers to attempt usage on low compute power devices, such as early Raspberry Pi models."""
+    def prune_layers(newlow, newhigh):
+        """NYE: Trim network layers. inputs specify the lower and upper layers to REMAIN. Used to attempt usage on low compute power devices, such as early Raspberry Pi models."""
         pass
 
     def safeClose(self):
@@ -137,8 +167,8 @@ class Model:
 
 if __name__ == "__main__":
     # running as main will test baselines on the running platform
-    m = Model(mode="cuda")
-    atexit.register(m.safeClose)
+    m = WrappedModel(mode="cuda")
+    # atexit.register(m.safeClose)
     m.baseline_dict = {}
     test_data = data_loader()
     i = 0
