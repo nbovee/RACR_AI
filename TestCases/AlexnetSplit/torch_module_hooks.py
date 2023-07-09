@@ -11,9 +11,6 @@ from test_data import test_data_loader as data_loader
 import atexit
 from collections import OrderedDict
 
-# from torchvision.models.utils import load_state_dict_from_url
-# from typing import Type, Any, Callable, Union, List, Optional, cast
-
 class WrappedModel(nn.Module):
     """Wraps a pretrained model with the features necesarry to perform edge computing tests. Uses pytorch
     hooks to perform benchmarkings, grab intermediate layers, and slice the Sequential to provide input to intermediate layers or exit early. """
@@ -23,6 +20,7 @@ class WrappedModel(nn.Module):
         self.device = kwargs.get('mode',"cpu")
         self.mode = "eval"
         self.dataset = "imagenet"
+        self.hook_depth = 0
         self.num_output_layers = None # not needed?
         self.base_input_size = (224, 224)
         self.preprocess = transforms.Compose(
@@ -35,16 +33,15 @@ class WrappedModel(nn.Module):
 )
         # self.pretrained = models.alexnet(pretrained=True)
         self.pretrained = models.resnet18()
-        self.start_layer_index = 0 # inference will be started at this layer.
-        self.ignore_layer_index = len(list(self.pretrained._modules.keys())) # will not perform inference at this layer or above
         self.layer_count = 0
         self.selected_out = OrderedDict() # could be useful for skips
         self.f_hooks = []
         self.f_pre_hooks = []
-
         # Cant simply profile from a hook due to the possibility of skip connections
         # Similarly, we dont use the global register for hooks because we need more information for our profiling
-        self.walk_modules(self.pretrained._modules)
+        self.walk_modules(self.pretrained.children(), 0)
+        self.start_layer_index = 0 # inference will never be started below this layer, watch if pruned.
+        self.ignore_layer_index = self.layer_count # will not perform inference at this layer or above, watch if pruned.
 
         if self.mode == "eval":
             self.pretrained.eval()
@@ -57,25 +54,21 @@ class WrappedModel(nn.Module):
         self.pretrained.to(self.device)
         self.warmup(iterations=1)
         
-    def walk_modules(self, module):
+    def walk_modules(self, module_generator, depth):
         '''Recursively walks and marks Modules for hooks in a DFS'''
-        if isinstance(module, (nn.Sequential, nn.ModuleList, OrderedDict)):
-            # if iterable, we want to go deeper
-            for i in module:
-                if isinstance(module, OrderedDict):
-                    # custom recursion for OrderedDicts
-                    self.walk_modules(module[i])
-                else:
-                    self.walk_modules(i)
-            
-        elif isinstance(module, nn.Module):
-            # if not iterable, we have found a layer to hook
-            print(f"Layer {self.layer_count}: {str(module).split('(')[0]} hooks applied.")
-            # there must be a better way to get names but not needed atm
-            self.f_hooks.append(module.register_forward_pre_hook(self.forward_prehook(self.layer_count, str(module).split('(')[0], (0, 0))))
-            self.f_pre_hooks.append(module.register_forward_hook(self.forward_posthook(self.layer_count, str(module).split('(')[0], (0, 0))))
-            # back hooks left out for now
-            self.layer_count += 1
+        for child in module_generator:
+            if len(list(child.children())) > 0 and depth < self.hook_depth:
+                # either has children we want to look at, or is max depth
+                print(f"Module {str(child).split('(')[0]} with children found, hooking children instead of module.")
+                self.walk_modules(child.children(), depth + 1)
+            elif isinstance(child, nn.Module):
+            # if not iterable/too deep, we have found a layer to hook
+                print(f"Layer {self.layer_count}: {str(child).split('(')[0]} hooks applied.")
+                # there must be a better way to get names but not needed atm
+                self.f_hooks.append(child.register_forward_pre_hook(self.forward_prehook(self.layer_count, str(child).split('(')[0], (0, 0))))
+                self.f_pre_hooks.append(child.register_forward_hook(self.forward_posthook(self.layer_count, str(child).split('(')[0], (0, 0))))
+                # back hooks left out for now
+                self.layer_count += 1
 
     def forward_posthook(self, layer_index, layer_name, input_shape):
         """Posthook a layer for output capture and benchmarking."""
@@ -103,7 +96,7 @@ class WrappedModel(nn.Module):
         # Alexnet can be easily set up into a sliceable structure, but more complex networks may not be possbile without custom forward passes.
         # For benchmarking, it would be possible to await a Tensor from a pre-hook, but that is not practical for actual use.
         # Need discussing with Algo Team.
-        net_for_pass = nn.Sequential(*net_for_pass[start:end])
+        # net_for_pass = nn.Sequential(*net_for_pass[start:end])
         with torch.no_grad():
             out = net_for_pass(x)
         return out
@@ -148,7 +141,7 @@ class WrappedModel(nn.Module):
         pass
 
     def safeClose(self):
-        df = pd.DataFrame(data=self.baseline_dict)
+        df = pd.DataFrame(data=self.timing_dict)
         df.to_csv(f"./test_results/test_results-desktop_cuda{time.time()}.csv")
         torch.cuda.empty_cache()
 
@@ -168,7 +161,7 @@ if __name__ == "__main__":
     # running as main will test baselines on the running platform
     m = WrappedModel(mode="cuda")
     atexit.register(m.safeClose)
-    m.baseline_dict = {}
+    m.timing_dict = {}
     test_data = data_loader()
     i = 0
     for [data, filename] in test_data.image_list:
@@ -176,7 +169,7 @@ if __name__ == "__main__":
         prediction = m.predict(data)
         print(i)
         i += 1
-        m.baseline_dict[filename] = {
+        m.timing_dict[filename] = {
             "source": "desktop_cuda",
             "prediction": prediction,
             "inference_time": time.time() - t1,
