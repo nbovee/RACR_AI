@@ -19,11 +19,12 @@ class ParticipantService(rpyc.Service):
         pass
 
     def exposed_get_inference(self, uuid): # this is an exposed method
-        matches = [k for k, v in self.results_dict if uuid in k]
-        result = None
-        for match in matches:
-            result.append(self.results_dict.pop(match))
-        return result
+        # matches = [k for k, v in self.results_dict if uuid in k]
+        # result = None
+        # for match in matches:
+        #     result.append(self.results_dict.pop(match))
+        # return result
+        return self.results_dict.pop(uuid, [])
     
 
 # rpc_service = classpartial(ParticipantService) # decoupled early just in case

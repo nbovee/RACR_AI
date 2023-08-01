@@ -6,36 +6,17 @@ import time
 import rpyc
 from rpyc import ThreadedServer
 import atexit
+import copy
+import yaml
 
 from client_rpc_node import ParticipantService
 from observer_rpc_node import ObserverServer
 
 participant_servers = []
 
-test_dicts = [{
-    'inference_id' : '9a6e9b30-2f47-4682-b4b5-a34b67c867fe',
-    'tensor_preprocess_time': 0,
-    'start_layer': 0,
-    'exit_layer' : 1,
-    'start_bandwidth': 1,
-    'exit_bandwidth' : 2,
-    'tensor_postprocess_time': 0,
-    'layer_information' : {
-        'layer_id' : 0,
-        'class' : "asdtas",
-        'layer_dimensions' : (1, 2, 3), # may need to alter or cut depending on how custome nn.Modules report this
-        'precision' : 'nn.dtype',
-        'cpu_cycles_used' : 1,
-        'watts_used': None,
-        'transfer_size' : 10,
-        'transfer_time' : 1142
-
-    }
-},
-              {},
-              {},
-              {},
-              {}]
+with open('test_dicts.yaml', 'r') as file:
+    test_dicts = yaml.safe_load(file)
+# test_dicts = yaml.load('./test_dicts.yaml', Loader=yaml.Loader)
 
 def create_servers():
     global reg
@@ -43,7 +24,7 @@ def create_servers():
     atexit.register(stop_registry)
     for i in range(5):
         _port = 18861 + i
-        stub = ThreadedServer(ParticipantService({}, i), port=_port, auto_register=True) # since these are all on localhost for dummy testing they must have different ports
+        stub = ThreadedServer(ParticipantService(i, copy.deepcopy(test_dicts[i])), port=_port, auto_register=True) # since these are all on localhost for dummy testing they must have different ports
         atexit.register(stop_server, i)
         participant_servers.append(stub)
 
@@ -76,8 +57,14 @@ def main():
     start_servers()
     print(f"Active Node Types:{rpyc.list_services()}")
     print(f"Active Nodes of above: {rpyc.discover(*rpyc.list_services())}")
+    # example usage
+    if False:
+        c1 = rpyc.connect("localhost", 18861)
+        ret = c1.root.get_inference('123123') # will be an empty array
+        ret1 = c1.root.get_inference('9a6e9b30-2f47-4682-b4b5-a34b67c867fe') # will be an array of matching dicts
     while 1:
         time.sleep(.1)
+    
 
 
 if __name__ == "__main__":
