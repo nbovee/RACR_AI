@@ -129,6 +129,7 @@ dmypy.json
 .pyre/
 
 # VSCode environment
+.vscode
 .idea
 
 # Generated Code
