@@ -5,7 +5,7 @@ from itertools import cycle
 
 class Partitioner:
     """factory class for the method of determining split location in a model. Custom partitioners can be written in their own module and dropped into this directory for automatic import."""
-    
+
     subclasses = {}
 
     # @classmethod implicit
@@ -20,5 +20,5 @@ class Partitioner:
         return cls.subclasses[class_type](*args, **kwargs)
 
     @abc.abstractmethod
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
