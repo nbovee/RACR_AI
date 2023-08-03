@@ -1,20 +1,22 @@
-from inspect import isclass
-from pkgutil import iter_modules
-from pathlib import Path
-from importlib import import_module
+# below is cool but not actually useful for us
 
-from . import Partitioner
+# from inspect import isclass
+# from pkgutil import iter_modules
+# from pathlib import Path
+# from importlib import import_module
 
-# iterate through the modules in the current package
-# credit to https://julienharbulot.com/python-dynamical-import.html
-# test if necesary, user defined subclasses may still register correctly.
-package_dir = Path(__file__).resolve().parent
-for (_, module_name, _) in iter_modules([package_dir]):
+# from . import Partitioner
 
-    # import the module and iterate through its attributes
-    module = import_module(f"{__name__}.{module_name}")
-    for attribute_name in dir(module):
-        attribute = getattr(module, attribute_name)
+# # iterate through the modules in the current package
+# # credit to https://julienharbulot.com/python-dynamical-import.html
+# # test if necesary, user defined subclasses may still register correctly.
+# package_dir = Path(__file__).resolve().parent
+# for (_, module_name, _) in iter_modules([package_dir]):
 
-        if isclass(attribute) and issubclass(attribute, Partitioner):
-            globals()[attribute_name] = attribute
+#     # import the module and iterate through its attributes
+#     module = import_module(f"{__name__}.{module_name}")
+#     for attribute_name in dir(module):
+#         attribute = getattr(module, attribute_name)
+
+#         if isclass(attribute) and issubclass(attribute, Partitioner):
+#             globals()[attribute_name] = attribute
