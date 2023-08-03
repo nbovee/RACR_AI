@@ -1,6 +1,7 @@
 class data_wrapper:
     def has_next(self):
-        raise Exception("not yet implemented")
+        raise NotImplementedError
 
     def next(self):
-        raise Exception("not yet implemented")
+        raise NotImplementedError
+    

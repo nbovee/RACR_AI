@@ -1,4 +1,4 @@
-from data_wrapper import data_wrapper
+import dataset_stub
 from PIL import Image
 import glob
 import pathlib
@@ -8,7 +8,7 @@ import sys
 test_img_dir = pathlib.Path(sys.path[0]) / "test"
 
 
-class test_data_loader(data_wrapper):
+class test_data_loader(dataset_stub.DatasetBase):
     def __init__(self, img_directory=test_img_dir):
         self.image_list = []
         self.load_data(img_directory)
