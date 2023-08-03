@@ -14,7 +14,7 @@ class CyclePartitioner(Partitioner):
         else:
             self.counter = cycle(range(0, self.breakpoints + 1))
 
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return next(self.counter)
 
 
@@ -26,5 +26,5 @@ class CountPartitioner(Partitioner):
         self.breakpoints = start
         self.counter = count(start)
 
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return next(self.counter)
