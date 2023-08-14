@@ -102,7 +102,8 @@ class WrappedModel(nn.Module):
                 self.buffer_dict[self.splittable_layer_count]["class"] = type(child)
                 
                 # need to iterate through this generator to get right for the linreg this it seems
-                param_dict1 = list(next(child.named_parameters()))
+                # this is not flexible enough, pivot to torchinfo package
+                param_dict1 = list(child.named_parameters())
                 param_dict = next(child.parameters())
                 p0 = list(child.parameters())
                 p1 = param_dict.dtype
