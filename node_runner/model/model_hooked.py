@@ -31,6 +31,7 @@ class WrappedModel(nn.Module):
         "class": None,
         "inference_time": None,
         "dimension": [],
+        "parameters": None,
         "precision": None,
         "cpu_cycles_used": None,
         "watts_used": None,
@@ -98,6 +99,16 @@ class WrappedModel(nn.Module):
                 )
                 # there must be a better way to get names but not needed atm
                 self.buffer_dict[self.splittable_layer_count] = copy.deepcopy(WrappedModel.layer_template_dict)
+                self.buffer_dict[self.splittable_layer_count]["class"] = type(child)
+                
+                # need to iterate through this generator to get right for the linreg this it seems
+                param_dict1 = list(next(child.named_parameters()))
+                param_dict = next(child.parameters())
+                p0 = list(child.parameters())
+                p1 = param_dict.dtype
+                p2 = param_dict.size()
+
+                self.buffer_dict[self.splittable_layer_count]["parameters"] = child.parameters()
                 self.f_hooks.append(
                     child.register_forward_pre_hook(
                         self.forward_prehook(
@@ -207,7 +218,7 @@ class WrappedModel(nn.Module):
             print("Starting warmup.")
             with torch.no_grad():
                 for i in range(iterations):
-                    _ = self(torch.randn(1, 3, *self.base_input_size))
+                    _ = self(torch.randn(1, 3, *self.base_input_size), inference_id = f"warmup_{i}")
             print("Warmup complete.")
 
     def prune_layers(newlow, newhigh):
@@ -221,4 +232,5 @@ class WrappedModel(nn.Module):
 if __name__ == "__main__":
     # running as main will test baselines on the running platform
     m = WrappedModel(mode="cuda")
-    print(m.inference_dict)
+    for k, v in m.inference_dict.items():
+        print(f"{k}:\n {v}")
