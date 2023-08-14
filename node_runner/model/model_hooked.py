@@ -103,6 +103,7 @@ class WrappedModel(nn.Module):
                 
                 # need to iterate through this generator to get right for the linreg this it seems
                 # this is not flexible enough, pivot to torchinfo package
+                # https://github.com/TylerYep/torchinfo/blob/c7a48971c6e16987d7dc32c14bf7b4418ced1d10/torchinfo/layer_info.py#L182
                 param_dict1 = list(child.named_parameters())
                 param_dict = next(child.parameters())
                 p0 = list(child.parameters())
