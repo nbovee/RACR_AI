@@ -11,7 +11,7 @@ import atexit
 from collections import OrderedDict
 import uuid
 import copy
-
+import torchinfo
 
 class HookExitException(Exception):
     """Exception to early exit from inference in naive running."""
@@ -47,6 +47,7 @@ class WrappedModel(nn.Module):
         self.device = kwargs.get("mode", "cpu")
         self.number_inferences = 0
         self.mode = "eval"
+        self.log = None
         self.hook_depth = 1
         self.base_input_size = (224, 224)
         atexit.register(self.safeClose)
@@ -57,6 +58,7 @@ class WrappedModel(nn.Module):
         self.f_pre_hooks = []
         # Cant simply profile from a hook due to the possibility of skip connections
         # Similarly, we dont use the global register for hooks because we need more information for our profiling
+        # run torchinfo here to get parameters/flops/mac for entry into dict
         self.walk_modules(self.pretrained.children(), 0)
         self.empty_buffer_dict = copy.deepcopy(self.buffer_dict)
         # values the hooks watch
@@ -138,7 +140,8 @@ class WrappedModel(nn.Module):
         """Prehook a layer for benchmarking."""
 
         def pre_hook(module, args):
-            self.buffer_dict[layer_index]['inference_time'] = -self.timer()
+            if self.log:
+                self.buffer_dict[layer_index]['inference_time'] = -self.timer()
             self.current_module_index += 1
             # print(f"L{layer_index}-{layer_name} called.")
             # print(f"val. {self.current_module_index}")
@@ -149,7 +152,8 @@ class WrappedModel(nn.Module):
         """Posthook a layer for output capture and benchmarking."""
 
         def hook(module, args, output):
-            self.buffer_dict[layer_index]['inference_time'] += self.timer()
+            if self.log:
+                self.buffer_dict[layer_index]['inference_time'] += self.timer()
             if (
                 layer_index >= self.current_module_stop_index - 1
                 and layer_index < self.max_ignore_layer_index - 1
@@ -167,9 +171,10 @@ class WrappedModel(nn.Module):
             raise Exception("Start and End indexes overlap.")
         return start, end
 
-    def forward(self, x, inference_id = None, start=0, end=np.inf):
+    def forward(self, x, inference_id = None, start=0, end=np.inf, log=True):
         """Wraps the pretrained forward pass to utilize our slicing."""
         start, end = self.enforce_bounds(start, end)
+        self.log = log
         self.current_module_stop_index = end
         self.current_module_index = 0
         inference_id = uuid.uuid4() if inference_id is None else inference_id
@@ -220,7 +225,7 @@ class WrappedModel(nn.Module):
             print("Starting warmup.")
             with torch.no_grad():
                 for i in range(iterations):
-                    _ = self(torch.randn(1, 3, *self.base_input_size), inference_id = f"warmup_{i}")
+                    _ = self(torch.randn(1, 3, *self.base_input_size), log = False)
             print("Warmup complete.")
 
     def prune_layers(newlow, newhigh):

@@ -1,6 +1,6 @@
 from .partitioner.partitioner import Partitioner
 
-
+# this module reads configs and sets up the modules and local rpc
 
 
 import os
