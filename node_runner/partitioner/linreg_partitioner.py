@@ -4,7 +4,7 @@ import torch
 import numpy
 import os
 import csv
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 class RegressionPartitioner(Partitioner):
     _TYPE = "regression"
@@ -30,20 +30,26 @@ class RegressionPartitioner(Partitioner):
             loss.backward()
             self.optim.step()
             # print(loss)
+
+        def manually_set_weights(self, w, b):
+            self.model.weight.fill_(w)
+            self.model.bias.fill_(b)
         
-        def plot_regression(self):
-            plt.plot(self.loss_list, 'r')
-            plt.tight_layout()
-            plt.grid('True', color='y')
-            plt.xlabel("Epochs/Iterations")
-            plt.ylabel("Loss")
-            plt.show()
+        # def plot_regression(self):
+        #     plt.plot(self.loss_list, 'r')
+        #     plt.tight_layout()
+        #     plt.grid('True', color='y')
+        #     plt.xlabel("Epochs/Iterations")
+        #     plt.ylabel("Loss")
+        #     plt.show()
 
     def __init__(self, num_breakpoints, clip_min_max=True) -> None:
         super().__init__()
         self.breakpoints = num_breakpoints
         self.clip = clip_min_max
         self.regression = {}
+        self.module_sequence = []
+        self.num_modules = None
 
     def create_data(self, model, iterations = 10):
     # does not currently account for data precision below full float
@@ -52,7 +58,9 @@ class RegressionPartitioner(Partitioner):
             model(torch.randn(1, *model.base_input_size), inference_id = f"profile")
             from_model = model.master_dict.pop("profile")["layer_information"].values()
             temp_data.extend(from_model)
-  
+            # build a simple sequence from the first row of data
+        for i in range(self.breakpoints):
+            self.module_sequence.append(temp_data[i]["class"])
         for datapoint in temp_data:
             # note this is append mode so local files need to be cleared before deploying elsewhere
             with open(f'TestCases/AlexnetSplit/partitioner_datapoints/local/{datapoint["class"]}.csv' , 'a') as f:
@@ -69,7 +77,8 @@ class RegressionPartitioner(Partitioner):
                     x.append(float(line[0]))
                     y.append(float(line[1]))
                 if max(x) == min(x):
-                    print(f"Unstable data for linreg, skipping {layer_type.split('.')[0]}")
+                    print(f"Unstable data for linreg, setting w=0 b=median {layer_type.split('.')[0]}")
+                    # set w and b here
                 else:
                     self.regression[layer_type.split(".")[0]] = RegressionPartitioner.linreg()
                     current_linreg = self.regression[layer_type.split(".")[0]]
@@ -83,7 +92,7 @@ class RegressionPartitioner(Partitioner):
                         for v, z in zip(x, y):
                             pred = current_linreg.forward(v)
                             current_linreg.train_pass(z, pred)
-
+                    # then scale w and b by mmax!!
                         # priting the values for understanding
                         # print('{}, \t{}, \t{}, \t{}'.format(i, loss.item(), w.item(), b.item()))
 
