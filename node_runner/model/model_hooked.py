@@ -11,7 +11,9 @@ import atexit
 from collections import OrderedDict
 import uuid
 import copy
-import torchinfo
+from torchinfo import summary
+from torchinfo.layer_info import LayerInfo
+
 
 class HookExitException(Exception):
     """Exception to early exit from inference in naive running."""
@@ -30,9 +32,9 @@ class WrappedModel(nn.Module):
         "layer_id": None, # this one may prove unneeded
         "class": None,
         "inference_time": None,
-        "dimension": [],
         "parameters": None,
-        "precision": None,
+        "parameter_bytes": None,
+        # "precision": None, precision is not technically per layer, disabled for now
         "cpu_cycles_used": None,
         "watts_used": None,
     }
@@ -41,35 +43,36 @@ class WrappedModel(nn.Module):
         print(*args)
         super().__init__(*args)
         self.timer = time.perf_counter_ns
-        self.inference_dict = {} # this should be the externally accessible dict
-        self.forward_dict = {}
-        self.buffer_dict = {}
-        self.device = kwargs.get("mode", "cpu")
-        self.number_inferences = 0
-        self.mode = "eval"
-        self.log = None
-        self.hook_depth = 1
-        self.base_input_size = (224, 224)
+        self.master_dict = kwargs.get("dict", {}) # this should be the externally accessible dict
+        self.inference_dict = {} # collation dict for the current partition of a given inference
+        self.forward_dict = {} # dict for the results from the current forward pass
+        self.device = kwargs.get("device", "cpu")
+        self.mode = kwargs.get("mode","eval")
+        self.hook_depth = kwargs.get("depth", np.inf)
+        self.base_input_size = kwargs.get("image_size", (3, 224, 224))
         atexit.register(self.safeClose)
         self.pretrained = kwargs.pop("pretrained", models.alexnet(pretrained=True))
         self.splittable_layer_count = 0
         self.selected_out = OrderedDict()  # could be useful for skips
         self.f_hooks = []
         self.f_pre_hooks = []
-        # Cant simply profile from a hook due to the possibility of skip connections
-        # Similarly, we dont use the global register for hooks because we need more information for our profiling
-        # run torchinfo here to get parameters/flops/mac for entry into dict
-        self.walk_modules(self.pretrained.children(), 0)
-        self.empty_buffer_dict = copy.deepcopy(self.buffer_dict)
-        # values the hooks watch
+       
+        # run torchinfo here to get parameters/flops/mac for entry into dict      
+        self.torchinfo = summary(self.pretrained, (1, *self.base_input_size), verbose=0)
+        self.walk_modules(self.pretrained.children(), 1) # depth starts at 1 to match torchinfo depths
+        del self.torchinfo
+        self.empty_buffer_dict = copy.deepcopy(self.forward_dict)
+       
+        # ---- class scope values that the hooks and forward pass use ----
         self.current_module_stop_index = None
         self.current_module_index = None
-        self.start_layer_index = (
-            0  # inference will never be started below this layer, watch if pruned.
-        )
-        self.max_ignore_layer_index = (
-            self.splittable_layer_count - 1
-        )  # will not perform inference at this layer or above, watch if pruned.
+        
+        # inference will never be started below this layer, watch if pruned.
+        self.start_layer_index = 0
+        
+        # will not perform inference at this layer or above, watch if pruned.
+        self.max_ignore_layer_index = self.splittable_layer_count - 1
+        
 
         if self.mode == "eval":
             self.pretrained.eval()
@@ -88,31 +91,32 @@ class WrappedModel(nn.Module):
             if len(list(child.children())) > 0 and depth < self.hook_depth:
                 # either has children we want to look at, or is max depth
                 print(
-                    f"{' '*depth}Module {str(child).split('(')[0]} with children found, hooking children instead of module."
+                    f"{'-'*depth}Module {str(child).split('(')[0]} with children found, hooking children instead of module."
                 )
                 self.walk_modules(child.children(), depth + 1)
                 print(
-                    f"{' '*depth}End of Module {str(child).split('(')[0]}'s children."
+                    f"{'-'*depth}End of Module {str(child).split('(')[0]}'s children."
                 )
             elif isinstance(child, nn.Module):
                 # if not iterable/too deep, we have found a layer to hook
-                print(
-                    f"{' '*depth}Layer {self.splittable_layer_count}: {str(child).split('(')[0]} hooks applied."
-                )
-                # there must be a better way to get names but not needed atm
-                self.buffer_dict[self.splittable_layer_count] = copy.deepcopy(WrappedModel.layer_template_dict)
-                self.buffer_dict[self.splittable_layer_count]["class"] = type(child)
                 
-                # need to iterate through this generator to get right for the linreg this it seems
-                # this is not flexible enough, pivot to torchinfo package
-                # https://github.com/TylerYep/torchinfo/blob/c7a48971c6e16987d7dc32c14bf7b4418ced1d10/torchinfo/layer_info.py#L182
-                param_dict1 = list(child.named_parameters())
-                param_dict = next(child.parameters())
-                p0 = list(child.parameters())
-                p1 = param_dict.dtype
-                p2 = param_dict.size()
+                for layer in self.torchinfo.summary_list:
+                    if layer.layer_id == id(child):
+                        break
+                if layer.layer_id != id(child):
+                    raise Exception("module id not find while adding hooks.")
+                self.forward_dict[self.splittable_layer_count] = copy.deepcopy(WrappedModel.layer_template_dict)
+                self.forward_dict[self.splittable_layer_count]["depth"] = depth
+                # block of data from torchinfo
+                self.forward_dict[self.splittable_layer_count]["layer_id"] = self.splittable_layer_count
+                self.forward_dict[self.splittable_layer_count]["class"] = layer.class_name
+                self.forward_dict[self.splittable_layer_count]["precision"] = None
+                self.forward_dict[self.splittable_layer_count]["parameters"] = layer.num_params
+                self.forward_dict[self.splittable_layer_count]["parameter_bytes"] = layer.param_bytes
+                self.forward_dict[self.splittable_layer_count]["input_size"] = layer.input_size
+                self.forward_dict[self.splittable_layer_count]["output_size"] = layer.output_size
+                self.forward_dict[self.splittable_layer_count]["output_bytes"] = layer.output_bytes
 
-                self.buffer_dict[self.splittable_layer_count]["parameters"] = child.parameters()
                 self.f_hooks.append(
                     child.register_forward_pre_hook(
                         self.forward_prehook(
@@ -133,6 +137,9 @@ class WrappedModel(nn.Module):
                         with_kwargs=False,
                     )
                 )
+                print(
+                    f"{'-'*depth}Layer {self.splittable_layer_count}: {str(child).split('(')[0]} hooks applied."
+                )
                 # back hooks left out for now
                 self.splittable_layer_count += 1
 
@@ -141,7 +148,7 @@ class WrappedModel(nn.Module):
 
         def pre_hook(module, args):
             if self.log:
-                self.buffer_dict[layer_index]['inference_time'] = -self.timer()
+                self.forward_dict[layer_index]['inference_time'] = -self.timer()
             self.current_module_index += 1
             # print(f"L{layer_index}-{layer_name} called.")
             # print(f"val. {self.current_module_index}")
@@ -153,7 +160,7 @@ class WrappedModel(nn.Module):
 
         def hook(module, args, output):
             if self.log:
-                self.buffer_dict[layer_index]['inference_time'] += self.timer()
+                self.forward_dict[layer_index]['inference_time'] += self.timer()
             if (
                 layer_index >= self.current_module_stop_index - 1
                 and layer_index < self.max_ignore_layer_index - 1
@@ -178,8 +185,7 @@ class WrappedModel(nn.Module):
         self.current_module_stop_index = end
         self.current_module_index = 0
         inference_id = uuid.uuid4() if inference_id is None else inference_id
-        # self.buffer_dict = copy.deepcopy(WrappedModel.layer_template_dict)
-        self.forward_dict['inference_id'] = str(inference_id)+'.0'
+        self.inference_dict['inference_id'] = str(inference_id)+'.0'
         # forward values generated by hooks go to an buffer dict, which is cleard after each complete pass
         try:
             if self.mode != "train":
@@ -191,10 +197,11 @@ class WrappedModel(nn.Module):
             print("Exit early from hook.")
             out = e.result
 
-        self.forward_dict['layer_information'] = self.buffer_dict
-        self.inference_dict[inference_id] = copy.deepcopy(self.forward_dict) # only one deepcopy needed
-        self.forward_dict = {}
-        self.buffer_dict = copy.deepcopy(self.empty_buffer_dict)
+        self.inference_dict['layer_information'] = self.forward_dict
+        if log:
+            self.master_dict[inference_id] = copy.deepcopy(self.inference_dict) # only one deepcopy needed
+        self.inference_dict = {}
+        self.forward_dict = copy.deepcopy(self.empty_buffer_dict)
 
         # reset hook variables
         self.current_module_stop_index = None
@@ -225,7 +232,7 @@ class WrappedModel(nn.Module):
             print("Starting warmup.")
             with torch.no_grad():
                 for i in range(iterations):
-                    _ = self(torch.randn(1, 3, *self.base_input_size), log = False)
+                    self(torch.randn(1, *self.base_input_size), log = False)
             print("Warmup complete.")
 
     def prune_layers(newlow, newhigh):
@@ -238,6 +245,12 @@ class WrappedModel(nn.Module):
 
 if __name__ == "__main__":
     # running as main will test baselines on the running platform
-    m = WrappedModel(mode="cuda")
-    for k, v in m.inference_dict.items():
-        print(f"{k}:\n {v}")
+    m = WrappedModel()
+    for k, v in m.master_dict.items():
+        print(f"{k}:\n")
+        for i, j in v.items():
+            if i == "layer_information":
+                for x, y in j.items():
+                    print(f"{x} : {y}")
+            else:   
+                print(f"{i} : {j}")
