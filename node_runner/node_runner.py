@@ -42,4 +42,5 @@ if __name__ == "__main__":
     linreg = RegressionPartitioner(m.splittable_layer_count)
     linreg.create_data(m)
     linreg.update_regression()
-    m((torch.randn(1, *m.base_input_size)))
+    s = linreg.estimate_split_point()
+    # m((torch.randn(1, *m.base_input_size)))

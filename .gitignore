@@ -147,3 +147,4 @@ device_info
 # Docker image tarballs are too large for the 1MB GitHub filesize limit
 api/Docker_images/*.tar
 
+TestCases/AlexnetSplit/partitioner_datapoints/local/AdaptiveAvgPool2d.csv
