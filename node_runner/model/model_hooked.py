@@ -39,11 +39,11 @@ class WrappedModel(nn.Module):
         "watts_used": None,
     }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, dict = None, **kwargs):
         print(*args)
         super().__init__(*args)
         self.timer = time.perf_counter_ns
-        self.master_dict = kwargs.get("dict", {}) # this should be the externally accessible dict
+        self.master_dict = dict # this should be the externally accessible dict
         self.inference_dict = {} # collation dict for the current partition of a given inference
         self.forward_dict = {} # dict for the results from the current forward pass
         self.device = kwargs.get("device", "cpu")
@@ -148,7 +148,7 @@ class WrappedModel(nn.Module):
         """Prehook a layer for benchmarking."""
 
         def pre_hook(module, input):
-            if self.log and self.current_module_index >= self.current_module_start_index:
+            if self.log and (self.current_module_index >= self.current_module_start_index):
                 self.forward_dict[layer_index]['inference_time'] = -self.timer()
             # store input until the correct layer arrives
             if self.current_module_index == 0 and self.current_module_start_index > 0:
@@ -190,7 +190,7 @@ class WrappedModel(nn.Module):
         self.current_module_start_index = start
 
         # prepare inference_id for storing results
-        inference_id = uuid.uuid4() if inference_id is None else inference_id
+        inference_id = str(uuid.uuid4()) if inference_id is None else inference_id
         if len(str(inference_id).split(".")) > 1:
             suffix = int(str(inference_id).split(".")[-1]) + 1
         else:
@@ -207,6 +207,8 @@ class WrappedModel(nn.Module):
         except HookExitException as e:
             print("Exit early from hook.")
             out = e.result
+            for i in range(self.current_module_stop_index, self.splittable_layer_count):
+                del self.forward_dict[i]
 
         # process and clean dicts before leaving forward
         self.inference_dict['layer_information'] = self.forward_dict

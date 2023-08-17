@@ -14,7 +14,7 @@ from observer_rpc_node import ObserverServer
 
 participant_servers = []
 
-with open('test_dicts.yaml', 'r') as file:
+with open('rpc/test_dicts.yaml', 'r') as file:
     test_dicts = yaml.safe_load(file)
 # test_dicts = yaml.load('./test_dicts.yaml', Loader=yaml.Loader)
 

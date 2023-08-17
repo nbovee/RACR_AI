@@ -4,6 +4,7 @@ import torch
 import numpy
 import os
 import csv
+import copy
 # import matplotlib.pyplot as plt
 
 class RegressionPartitioner(Partitioner):
@@ -52,12 +53,24 @@ class RegressionPartitioner(Partitioner):
         self.module_sequence = []
         self.num_modules = None
         self._dir = 'TestCases/AlexnetSplit/partitioner_datapoints/local/'
+        self.server_regression = None
+
+    def pass_regression_copy(self):
+        return copy.deepcopy(self.regression)
     
+    def add_server_module(self, server_modules):
+        self.server_regression = server_modules
+        for m, k in self.server_regression.items():
+            k.model.eval()
+
     def estimate_split_point(self, starting_layer):
         '''returns the index of the active model to split before. To mandate layer 0 is run on edge, provide starting_layer = 1'''
         for module, param_bytes, output_bytes in self.module_sequence:
             local_time_est_s = int(self.regression[module].forward(torch.as_tensor(float(param_bytes))))*1e-9
-            server_time_est_s = int(self.regression[module].forward(torch.as_tensor(float(param_bytes))))*1e-9/2 # get server_regression from grpc
+            if self.server_regression is None:
+                server_time_est_s = 0
+            else:
+                server_time_est_s = int(self.server_regression[module].forward(torch.as_tensor(float(param_bytes))))*1e-9 # get server_regression from grpc
             output_transfer_time = output_bytes/self._get_network_speed_bytes()
             if local_time_est_s < output_transfer_time + server_time_est_s:
                 starting_layer += 1
