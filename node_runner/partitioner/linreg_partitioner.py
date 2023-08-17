@@ -53,7 +53,8 @@ class RegressionPartitioner(Partitioner):
         self.num_modules = None
         self._dir = 'TestCases/AlexnetSplit/partitioner_datapoints/local/'
     
-    def estimate_split_point(self, starting_layer = 0):
+    def estimate_split_point(self, starting_layer):
+        '''returns the index of the active model to split before. To mandate layer 0 is run on edge, provide starting_layer = 1'''
         for module, param_bytes, output_bytes in self.module_sequence:
             local_time_est_s = int(self.regression[module].forward(torch.as_tensor(float(param_bytes))))*1e-9
             server_time_est_s = int(self.regression[module].forward(torch.as_tensor(float(param_bytes))))*1e-9/2 # get server_regression from grpc
@@ -65,8 +66,6 @@ class RegressionPartitioner(Partitioner):
         pass
 
     def create_data(self, model, iterations = 10):
-    # does not currently account for data precision below full float
-        # delete directory data first just in case
         for f in os.listdir(self._dir):
             os.remove(os.path.join(self._dir, f))
         temp_data = []
@@ -79,16 +78,12 @@ class RegressionPartitioner(Partitioner):
             self.module_sequence.append((temp_data[i]["class"], temp_data[i]["parameter_bytes"], temp_data[i]["output_bytes"]))
         output_bytes = None # store output size bytes for usage in following layers that may not have true parameters
         for datapoint in temp_data:
-            # note this is append mode so local files need to be cleared before deploying elsewhere
-            # function will be output_bytes*size of key features?
             with open(os.path.join(self._dir, f'{datapoint["class"]}.csv') , 'a') as f:
                 selected_value = datapoint['parameter_bytes'] if datapoint['parameter_bytes'] != 0 else output_bytes
                 f.write(f"{selected_value}, {datapoint['inference_time']}\n")
             output_bytes = datapoint['output_bytes']
 
     def update_regression(self):
-        # these should be randomized
-        # parse directory, create dict for each filename. Dict holds a list with two values, w & b
         for layer_type in os.listdir(self._dir):
             x, y = [], []
             self.regression[layer_type.split(".")[0]] = RegressionPartitioner.linreg()
@@ -116,16 +111,10 @@ class RegressionPartitioner(Partitioner):
                             current_linreg.train_pass(z, pred)
                     # then scale b by mmax, our data is not normalized to the same range
                     current_linreg.manually_scale_bias(mmax)
-                        # print('{}, \t{}, \t{}, \t{}'.format(i, loss.item(), w.item(), b.item()))
 
-    def _get_network_speed_bytes(self):
-        # needs work
-        return 10 * 1024**2
+    def _get_network_speed_bytes(self, artificial_value = 10 * 1024**2):
+        # needs work, ideal methodology to have a thread checking this continuously.
+        return artificial_value if artificial_value else None # change none to the thread value 
     
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        # yield the first layer where sum of estimated remaining inference time is greater than transfer time + remaining inference time on the server
-        min = 1 if self.clip else 0
-        max = self.breakpoints -1 if self.clip else self.breakpoints
-        res = next(self.counter)
-        for i in range(self.repeats):
-            yield res
+        return self.estimate_split_point(starting_layer=0)

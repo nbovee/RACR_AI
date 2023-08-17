@@ -1,9 +1,12 @@
 from partitioner.linreg_partitioner import RegressionPartitioner
 from model.model_hooked import WrappedModel
+from rpc.client_rpc_node import ParticipantService
 
 import torch
-# this module reads configs and sets up the modules and local rpc
+from rpyc import ThreadedServer
 
+# this module reads configs and sets up the modules and local rpc
+keepalive = True
 
 
 
@@ -38,9 +41,27 @@ def safeClose(self):
 if __name__ == "__main__":
     global master_dictionary
     master_dictionary = dict()
+    # start grpc thread
+    myname = "edge_device1"
     m = WrappedModel(dict = master_dictionary, depth = 2)
-    linreg = RegressionPartitioner(m.splittable_layer_count)
-    linreg.create_data(m)
-    linreg.update_regression()
-    s = linreg.estimate_split_point()
-    # m((torch.randn(1, *m.base_input_size)))
+    Scheduler = RegressionPartitioner(m.splittable_layer_count)
+    Scheduler.create_data(m)
+    Scheduler.update_regression()
+
+    # now that these are initialized, we can start the RPC and send ready signals
+    stub = ThreadedServer(ParticipantService(myname, master_dictionary), auto_register=True)
+    while keepalive:
+        s = Scheduler()
+        i = torch.randn(1, *m.base_input_size)
+        part = m(i, end=s)
+        # async send to server, grpc handles receipt of values
+
+        # loop structure:
+        # get edge#1
+        # no await
+        # start server#1
+        #   loop
+        # get edge#2
+        # await server#1
+        # start server#2
+        #   loop...
