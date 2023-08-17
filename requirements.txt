@@ -1,11 +1,8 @@
-blosc2
-grpcio-tools
-numpy
-pandas
-Pillow
-protobuf
-torch
-torchvision
-# torch==1.10.1+cu102
-# torchvision==0.11.2+cu102
-# pip install torch==1.10.1+cu102 torchvision==0.11.2+cu102 torchaudio==0.10.1 -f https://download.pytorch.org/whl/cu102/torch_stable.html
+numpy==1.25.2
+pandas==2.0.3
+Pillow==10.0.0
+PyYAML==6.0.1
+rpyc==5.3.1
+torch==2.0.1
+torchinfo==1.8.0
+torchvision==0.15.2

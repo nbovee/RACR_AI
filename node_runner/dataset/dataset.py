@@ -15,7 +15,7 @@ class Dataset:
     ]
 )
         
-            def parse_output(self, predictions):
+    def parse_output(self, predictions):
         """Take the final output tensor of the wrapped model and map it to its appropriate human readable results."""
         probabilities = torch.nn.functional.softmax(predictions[0], dim=0)
         # Show top categories per image
