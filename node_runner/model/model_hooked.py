@@ -195,7 +195,7 @@ class WrappedModel(nn.Module):
             suffix = int(str(inference_id).split(".")[-1]) + 1
         else:
             suffix = 0
-        self.inference_dict['inference_id'] = str(inference_id)+f'.{suffix}'
+        self.inference_dict['inference_id'] = str(str(inference_id).split(".")[0])+f'.{suffix}'
         
         # actually run the forward pass
         try:
@@ -213,7 +213,7 @@ class WrappedModel(nn.Module):
         # process and clean dicts before leaving forward
         self.inference_dict['layer_information'] = self.forward_dict
         if log:
-            self.master_dict[inference_id] = copy.deepcopy(self.inference_dict) # only one deepcopy needed
+            self.master_dict[str(inference_id).split(".")[0]] = copy.deepcopy(self.inference_dict) # only one deepcopy needed
         self.inference_dict = {}
         self.forward_dict = copy.deepcopy(self.empty_buffer_dict)
 
@@ -260,5 +260,3 @@ class WrappedModel(nn.Module):
 if __name__ == "__main__":
     # running as main will test baselines on the running platform
     m = WrappedModel()
-    r = m(torch.randn(1, 64, 55, 55), start = 1)
-    print(r.size())

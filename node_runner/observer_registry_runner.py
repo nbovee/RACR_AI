@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-
-# test file that creates local nodes for testing
 import threading
 import time
 import rpyc
@@ -8,34 +6,20 @@ from rpyc import ThreadedServer
 import atexit
 import copy
 import yaml
+import asyncio
+from observer_rpc_node import ObserverService
 
-from observer_rpc_node import ObserverServer
-
-participant_servers = []
-
-
-def create_servers():
-    global reg
-    reg = ObserverServer(allow_listing=True)
-    atexit.register(stop_registry)
-
-def start_registry():
-    print(f"Started Registry Server.")
-    reg.start()
-
-def stop_registry():
-    print(f"Stopping Registry Server.")
-    reg.close()
-
-def start_servers():
-    threads = [threading.Thread(target=start_registry)]
+def main():
+    reg = rpyc.utils.registry.UDPRegistryServer(allow_listing=True)
+    obs = ThreadedServer(ObserverService(), auto_register=True)
+    threads = [
+        threading.Thread(target=reg.start),
+        threading.Thread(target=obs.start)]
     for t in threads:
         t.daemon = True # this lets us kill with KeyboardInterrupt
         t.start()
-
-def main():
-    create_servers()
-    start_servers()
+    atexit.register(reg.close)
+    atexit.register(obs.close)
     while True:
         print(f"Active Node Types: {rpyc.list_services()}")
         if len(rpyc.list_services()) > 0:

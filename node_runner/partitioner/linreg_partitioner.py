@@ -5,6 +5,7 @@ import numpy
 import os
 import csv
 import copy
+import pickle
 # import matplotlib.pyplot as plt
 
 class RegressionPartitioner(Partitioner):
@@ -56,12 +57,10 @@ class RegressionPartitioner(Partitioner):
         self.server_regression = None
 
     def pass_regression_copy(self):
-        return copy.deepcopy(self.regression)
+        return pickle.dumps(self.regression)
     
     def add_server_module(self, server_modules):
         self.server_regression = server_modules
-        for m, k in self.server_regression.items():
-            k.model.eval()
 
     def estimate_split_point(self, starting_layer):
         '''returns the index of the active model to split before. To mandate layer 0 is run on edge, provide starting_layer = 1'''
