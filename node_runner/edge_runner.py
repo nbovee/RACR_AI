@@ -107,3 +107,4 @@ if __name__ == "__main__":
         cloud_conn.root.complete_inference(x, x_uuid, s)
         master_dictionary[x_uuid]["transfer_time"] = timer() - timestamp
         time.sleep(.2) # server callback and queue need some work so this is our ratelimit for now
+        obs_conn.root.inference_completed_signal(x_uuid)
