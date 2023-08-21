@@ -84,5 +84,6 @@ if __name__ == "__main__":
     this_server.service.link_model(m)
     this_server.service.link_scheduler(Scheduler)
     print("Starting server.")
+    atexit.register(print(master_dictionary))
     atexit.register(this_server.close)
     this_server.start()

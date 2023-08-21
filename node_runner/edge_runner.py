@@ -93,14 +93,16 @@ if __name__ == "__main__":
 
 
     # start our server after finding cloud, so we don't grab it! Would be easier to avoid if we parsed our own IP
+    atexit.register(print(master_dictionary))
     start_server(this_server)
     Scheduler.add_server_module(pickle.loads(cloud_conn.root.get_scheduler_dict()))
 
-    while keepalive:
+    for i in range(20):
+    # while keepalive:
         s = Scheduler()
         i = torch.randn(1, *m.base_input_size)
         x_uuid = str(uuid.uuid4())
-        print(f"Start inference {x_uuid}")
+        print(f"Split point: {s} Start inference {x_uuid}")
         x = m(i, inference_id = x_uuid, end=s)
         x = blosc2.pack_tensor(x)
         master_dictionary[x_uuid]["compressed_size"] = sys.getsizeof(x)
@@ -109,3 +111,5 @@ if __name__ == "__main__":
         master_dictionary[x_uuid]["transfer_time"] = timer() - timestamp
         time.sleep(.2) # server callback and queue need some work so this is our ratelimit for now
         obs_conn.root.inference_completed_signal(x_uuid)
+
+    keepalive = False
