@@ -24,17 +24,13 @@ from rich.box import SQUARE
 from rich.table import Table
 from getmac import get_mac_address
 from pathlib import Path
-from collections import defaultdict
 
-import api.experiment as exp
-import api.device as dev
-import api.utils as utils
-import api.controller as control
-import api.bash_script_wrappers as bashw
+from onodelib.ssh import DeviceMgr, SSHSession
+
 
 
 # path to root of tracr project
-PROJECT_ROOT = utils.get_tracr_root()
+PROJECT_ROOT = Path(__file__).parent.absolute()
 
 # path to console text files
 CONSOLE_TXT_DIR = PROJECT_ROOT / "Assets" / "console_text"
@@ -70,188 +66,6 @@ def setup_logging(verbosity):
     logger.addHandler(console_handler)
 
     return logger
-
-
-class Session:
-    """
-    Manages the current session, which is really just a single tracr command.
-    Responsible for managing state, logging, and console output.
-    """
-
-    logger: logging.Logger
-    console: Console
-    controller: control.Controller
-    device_mgr: dev.DeviceManager
-    exp_mgr: exp.ExperimentManager
-
-    def __init__(self, auto_init=True):
-        """
-        The constructor by default sets itself up with a logger, controller,
-        and console, but this can be turned off.
-
-        Parameters
-        ----------
-        auto_init : bool, optional
-            Whether or not to automatically initialize the session with a
-            logger, controller, and console, by default True
-        """
-        if auto_init:
-            self.console = Console()
-            self.controller = control.Controller()
-
-            # check whether the controller has been setup
-            if not self.controller.is_setup(showprogress=True):
-                self.print(
-                    f"Your machine is not yet set up as a tracr controller. "
-                    + f"Run the bootstrap script to get started.",
-                    style="bold red",
-                )
-                sys.exit(1)
-
-            # set up the logger according to the user's verbosity setting
-            verbosity = self.controller.get_settings("Preferences").get("verbosity", 2)
-            self.logger = setup_logging(verbosity)
-            self.device_mgr = dev.DeviceManager()
-            self.exp_mgr = exp.ExperimentManager(PROJECT_ROOT / "TestCases")
-        else:
-            self.logger = None
-            self.console = None
-            self.controller = None
-            self.device_mgr = None
-            self.exp_mgr = None
-
-    def log(self, level, message):
-        """
-        Logs a message to the session's logger, which may also print the log
-        to the console, depending on the user's verbosity setting.
-        """
-        if not self.logger:
-            raise RuntimeError(
-                "Can't log without first setting a logger for the Session instance."
-            )
-
-        if level == "debug":
-            self.logger.debug(message)
-        elif level == "info":
-            self.logger.info(message)
-        elif level == "warning":
-            self.logger.warning(message)
-        elif level == "error":
-            self.logger.error(message)
-        elif level == "critical":
-            self.logger.critical(message)
-        else:
-            raise ValueError(f"Invalid log level: {level}")
-
-    def print(self, message, **kwargs):
-        """
-        Prints a message to the console, using the session's console.
-        """
-        if not self.console:
-            raise RuntimeError(
-                "Can't print without first setting a console for the Session instance."
-            )
-
-        self.console.print(message, **kwargs)
-
-
-def launch_experiment(name, session: Session, preset=None, **kwargs):
-    """
-    Launches an experiment with the given name, and ideally a preset
-    from the experiment's config file. Otherwise, all options must
-    be specified in the kwargs.
-    """
-    if preset:
-        param_dicts = []
-        for nodetype, specs in preset.items():
-            nodename = nodetype
-            num_devices = specs["num_devices"]
-            if specs["run_on"] == "any":
-                devices = session.device_mgr.get_devices_by(
-                    is_available=True, is_setup=True
-                )[:num_devices]
-            elif specs["run_on"] == "controller":
-                devices = [session.controller]
-            else:
-                session.log("warning", "Only 'any' run_on is supported right now.")
-                return
-            logto = Path(specs.get("output").get("log_directory"))
-            monitor = bool(specs.get("output").get("monitor_realtime"))
-            load_data_from = specs.get("input").get("dataset_path")
-            data_type = specs.get("input").get("type")
-            data_loader = specs.get("input").get("loader")
-            port = specs.get("input").get("port")
-            metrics = specs.get("metrics")
-            nodespecs = session.exp_mgr.get_experiment(name).main_config.getval(
-                "nodes", "types", nodename
-            )
-            wait_for = nodespecs.get("depends_on")
-            python_version = nodespecs.get("environment").get("python_version")
-            pip_version = nodespecs.get("environment").get("pip_version")
-            main_file = nodespecs.get("main_file")
-
-            params = {
-                "node_type": nodename,
-                "devices": devices,
-                "logto": logto,
-                "monitor": monitor,
-                "load_data_from": load_data_from,
-                "data_type": data_type,
-                "data_loader": data_loader,
-                "port": port,
-                "metrics": metrics,
-                "wait_for": wait_for,
-                "python_version": python_version,
-                "pip_version": pip_version,
-                "main_file": main_file,
-            }
-
-            for device in devices:
-                if device == session.controller:
-                    controller_ready = all(
-                        bashw.validate_node_setup(
-                            name, nodename, python_version, pip_version, main_file
-                        ).values()
-                    )
-                    if not controller_ready:
-                        session.log("error", f"Controller is not ready to run {name}.")
-                        return
-                else:
-                    device_ready = all(
-                        bashw.validate_node_setup(
-                            name, nodename, python_version, pip_version, main_file
-                        ).values()
-                    )
-                    if not device_ready:
-                        bashw.node_setup(
-                            device.name,
-                            name,
-                            nodename,
-                            python_version,
-                            pip_version,
-                            overwrite=True,
-                        )
-                        device_ready = all(
-                            bashw.validate_node_setup(
-                                name, nodename, python_version, pip_version, main_file
-                            ).values()
-                        )
-                        if not device_ready:
-                            session.log(
-                                "error", f"{device.name} is not ready to run {name}."
-                            )
-                            return
-        ports = [p.get("port") for p in param_dicts if p.get("port")]
-        if ports:
-            port = ports[0]
-            session.controller.open_fileserver("load_data_from", port)
-        else:
-            session.controller.open_fileserver("load_data_from")
-
-        for p in sorted(param_dicts, key=lambda x: 1 if x["wait_for"] else 0):
-            pass
-
-            param_dicts.append(params)
 
 
 # CLI is split up into submodules responsible for different operations, so
@@ -294,35 +108,64 @@ def device_ls(args):
     args: argparse.Namespace
         The arguments and options passed to the CLI.
     """
-    devices = session.device_mgr.tracr_devices
-    console = session.console
+    device_mgr = DeviceMgr(PROJECT_ROOT / "onodelib" / "AppData" / "Store" / "known_devices.yaml")
+    devices = device_mgr.get_devices()
+    console = Console()
 
     table = Table(show_header=True, header_style="bold magenta")
     table.add_column("Name")
-    table.add_column("Available")
+    table.add_column("Reachable")
     table.add_column("Ready")
-    table.add_column("UUID")
     table.add_column("Host")
+    table.add_column("User")
 
     for d in devices:
-        name = d.name
-        available = (
+        name = d._name
+        can_be_reached = d.is_reachable()
+        reachable = (
             "[bold green]Yes[/bold green]"
-            if d.is_available()
+            if can_be_reached
             else "[bold red]No[/bold red]"
         )
         ready = (
             "[bold green]Yes[/bold green]"
-            if d.is_setup()
+            if False #d.is_setup()
             else "[bold red]No[/bold red]"
         )
-        uuid = str(d.id)
-        host = d.host
+        host = d.get_current("host")
+        user = d.get_current("user")
 
-        table.add_row(name, available, ready, uuid, host)
+        table.add_row(name, reachable, ready, host, user)
 
     console.print(table)
 
+def device_update(args):
+    """
+    Updates the participant module files to the current version.
+    """
+    device_mgr = DeviceMgr(PROJECT_ROOT / "onodelib" / "AppData" / "Store" / "known_devices.yaml")
+    available_devices = device_mgr.get_devices(available_only=True)
+
+    def update(device):
+        tracr_dir = Path(f"/home/{device.get_current('user')}/tracr")
+        ssh = SSHSession(device)
+        ssh.mkdir(tracr_dir)
+        participant_library = PROJECT_ROOT / "pnodelib"
+        ssh.copy_over(
+            participant_library,
+            tracr_dir,
+            exclude=["build", "__pycache__", "pnodelib.egg-info"]
+        )
+        ssh.exec_command("python -m pip install ~/tracr/pnodelib")
+    
+    if args.all:
+        for device in available_devices:
+            update(device)
+
+    elif args.name:
+        for name in args.name:
+            pass
+            
 
 def device_add(args):
     if args.wizard:
@@ -358,75 +201,13 @@ def experiment_ls(args):
     """
     Displays the list of experiments that are currently available.
     """
-    experiments = session.exp_mgr.experiments
-    console = session.console
-
-    main_table = Table(show_header=True, header_style="bold magenta")
-    main_table = Table(show_header=True, header_style="bold magenta", box=SQUARE)
-    main_table.add_column("Experiment Name")
-    main_table.add_column("Description")
-    main_table.add_column("Node Types")
-
-    for e in experiments:
-        name = e.name
-        description = e.main_config.getval("meta", "description")
-
-        # Create a new table for the node types
-        node_table = Table(show_header=True, header_style="bold cyan", box=SQUARE)
-        node_table.add_column("Name")
-        node_table.add_column("Environment")
-        node_table.add_column("Supported CPUs")
-        node_table.add_column("Dependencies")
-        node_table.add_column("Main File")
-
-        node_types = e.main_config.getval("nodes").get("types")
-        for key in node_types.keys():
-            nt_name = key
-            nt_env = (
-                f"Python: {node_types[key].get('environment').get('python_version')},"
-                + f"\nPip: {node_types[key].get('environment').get('pip_version')}"
-            )
-            nt_arch = ", ".join(node_types[key].get("supported_cpu_architectures"))
-            nt_deps = node_types[key].get("depends_on")
-            nt_main = node_types[key].get("main_file")
-
-            node_table.add_row(nt_name, nt_env, nt_arch, nt_deps, nt_main)
-
-        # Add the node table to the main table
-        main_table.add_row(name, description, node_table)
-
-    console.print(main_table)
-
+    pass
 
 def experiment_run(args):
     """
     Runs an experiment.
     """
-    exp_mgr = session.exp_mgr
-    console = session.console
-
-    name = args.name
-
-    if args.output:
-        pass
-
-    if args.preset:
-        # gather preset information
-        try:
-            exp = exp_mgr.get_experiment(name)
-        except ValueError:
-            session.log("warning", f"Experiment {name} not found.")
-            return
-        if not args.preset in exp.main_config.getval("runtime", "presets"):
-            session.log(
-                "warning",
-                f"Preset {args.preset} not found in experiment {name}.",
-            )
-            return
-        preset = exp.main_config.getval("runtime", "presets", args.preset)
-
-        session.controller.launch_experiment(name, preset=preset)
-
+    pass
 
 def network(args):
     if args.d:
@@ -453,9 +234,9 @@ def setup(args):
         print("Running setup")
 
 
-def main(session: Session):
+def main():
     parser = argparse.ArgumentParser(
-        description=utils.get_text(CONSOLE_TXT_DIR / "tracr_description.txt"),
+        description="A CLI for conducting collaborative AI experiments.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -463,7 +244,7 @@ def main(session: Session):
         "-v",
         "--version",
         action="version",
-        version=utils.get_text(CONSOLE_TXT_DIR / "about_tracr.txt"),
+        version="0.0.0",
     ),
     subparsers = parser.add_subparsers(title="SUBMODULES")
 
@@ -475,6 +256,23 @@ def main(session: Session):
     device_subparsers = parser_device.add_subparsers(title="DEVICE MODULE COMMANDS")
     parser_device_ls = device_subparsers.add_parser("ls", help="List devices")
     parser_device_ls.set_defaults(func=device_ls)
+
+    parser_device_update = device_subparsers.add_parser("update", help="Update participant module")
+    parser_device_update.add_argument(
+        "-a",
+        "--all",
+        action="store_true",
+        help="Update all available devices",
+        dest="all",
+    )
+    parser_device_update.add_argument(
+        "-n",
+        "--name",
+        nargs="+",
+        help="Update all available devices",
+        dest="all",
+    )
+    parser_device_update.set_defaults(func=device_update)
 
     parser_device_add = device_subparsers.add_parser(
         "add", help="add new devices and configure them for experiments"
@@ -639,9 +437,6 @@ def main(session: Session):
 
 
 if __name__ == "__main__":
-    # Start the session
-    session = Session()
-    session.log("debug", "tracr CLI run as main. Logging setup complete.")
 
     # Run the main function
-    main(session)
+    main()
