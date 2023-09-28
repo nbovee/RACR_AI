@@ -1,6 +1,6 @@
 # directories
-train: 'C:/Paolo-Project-Data-Models/training'
-val: 'C:/Paolo-Project-Data-Models/testing'
+train: 'C:/Paolo-Project-Data-Models/Onion Datasets/onion_balanced/training'
+val: 'C:/Paolo-Project-Data-Models/Onion Datasets/onion_balanced/train_validation'
 
 # number of classes
 nc: 2
