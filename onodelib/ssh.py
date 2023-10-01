@@ -1,11 +1,12 @@
 import paramiko
+from plumbum import SshMachine
 import pathlib
 import yaml
 
 from typing import Self
 
-from .lan import LAN
-from .exceptions import SSHAuthenticationException, DeviceUnavailableException
+from lan import LAN
+from exceptions import SSHAuthenticationException, DeviceUnavailableException
 
 
 class SSHConnectionParams:
@@ -113,7 +114,7 @@ class Device:
     _type: str
     _cparams: list[SSHConnectionParams]
 
-    working_cparams: SSHConnectionParams | None = None
+    working_cparams: SSHConnectionParams | None
 
     def __init__(self, name: str, record: dict) -> None:
         self._name = name
@@ -122,6 +123,7 @@ class Device:
         
         # check the default method first
         self._cparams.sort(key=lambda x: 1 if x.is_default() else 0, reverse=True)
+        self.working_cparams = None
         for p in self._cparams:
             if p.host_reachable():
                 self.working_cparams = p
@@ -154,6 +156,14 @@ class Device:
                 return self.working_cparams.user
         return None
 
+    def as_pb_sshmachine(self) -> SshMachine:
+        """
+        Returns a plumbum.SshMachine instance to represent the device.
+        """
+        if self.working_cparams is not None:
+            return SshMachine(self.working_cparams.host, user=self.working_cparams.user, keyfile=str(self.working_cparams.pkey_fp))
+        else:
+            raise DeviceUnavailableException(f"Cannot make plumbum object from device {self._name}: not available.")
 
 
 class DeviceMgr:
