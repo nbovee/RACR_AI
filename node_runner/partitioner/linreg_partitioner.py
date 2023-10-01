@@ -75,7 +75,7 @@ class RegressionPartitioner(Partitioner):
                 starting_layer += 1
             else:
                 return starting_layer
-        pass
+        return starting_layer
 
     def create_data(self, model, iterations = 10):
         for f in os.listdir(self._dir):
