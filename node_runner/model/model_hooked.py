@@ -191,13 +191,13 @@ class WrappedModel(nn.Module):
 
         # prepare inference_id for storing results
         _inference_id = "unlogged" if inference_id is None else inference_id
-        print(f"{_inference_id} id beginning.")
         if len(str(_inference_id).split(".")) > 1:
             suffix = int(str(_inference_id).split(".")[-1]) + 1
         else:
             suffix = 0
-        self.inference_dict['inference_id'] = str(str(_inference_id).split(".")[0])+f'.{suffix}'
-        
+        _inference_id = str(str(_inference_id).split(".")[0])+f'.{suffix}'
+        self.inference_dict['inference_id'] = _inference_id
+        print(f"{_inference_id} id beginning.")
         # actually run the forward pass
         try:
             if self.mode != "train":
