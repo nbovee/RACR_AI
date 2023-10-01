@@ -67,12 +67,6 @@ class CloudService(ParticipantService):
 # rpc_service = classpartial(ParticipantService) # decoupled early just in case
 # node1 = ThreadedServer(rpc_service, port=18861) # rpyc 4.0+ only, single server for all incoming requests to Node to reduce overhead
 
-def dump():
-    global master_dictionary
-    with open("C:\\CODE\\tempfiles\\cloud_dict_cycle.json", "w") as f:
-        json.dump(master_dictionary, f)
-
-
 if __name__ == "__main__":
     from model.model_hooked import WrappedModel
     from partitioner.linreg_partitioner import RegressionPartitioner
@@ -91,6 +85,5 @@ if __name__ == "__main__":
     this_server.service.link_model(m)
     this_server.service.link_scheduler(Scheduler)
     print("Starting server.")
-    atexit.register(dump)
     atexit.register(this_server.close)
     this_server.start()

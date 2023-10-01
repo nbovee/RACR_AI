@@ -71,12 +71,6 @@ if __name__ == "__main__":
     global master_dictionary
     master_dictionary = dict()
 
-    def dump():
-        global master_dictionary
-        with open("C:\\CODE\\tempfiles\\edge_dict_cycle.json", "w") as f:
-            json.dump(master_dictionary, f)
-
-    atexit.register(dump)
     m = WrappedModel(dict = master_dictionary, depth = 2)
     Scheduler = RegressionPartitioner(m.splittable_layer_count)
     # Scheduler = CyclePartitioner(m.splittable_layer_count, clip_min_max=False)
