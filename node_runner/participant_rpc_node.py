@@ -7,6 +7,7 @@ import time
 import atexit
 import threading
 import pickle
+import json
 
 timer = time.perf_counter_ns
 
@@ -58,13 +59,19 @@ class CloudService(ParticipantService):
         
         def complete_inference(x, inference_id = parent_uuid+".0", start = start_layer):
             x = self.model(x, inference_id = inference_id, start = start)
-            self.master_dict[inference_id.split(".")[0]]["result"] = x
+            # self.master_dict[inference_id.split(".")[0]]["result"] = x
         # complete the inference outside of this timed method
         threading.Thread(target=complete_inference, args = [x], kwargs={"start":start_layer,"inference_id":parent_uuid+".0"}).start()
         return timer() - timestamp
 
 # rpc_service = classpartial(ParticipantService) # decoupled early just in case
 # node1 = ThreadedServer(rpc_service, port=18861) # rpyc 4.0+ only, single server for all incoming requests to Node to reduce overhead
+
+def dump():
+    global master_dictionary
+    with open("C:\\CODE\\tempfiles\\cloud_dict_cycle.json", "w") as f:
+        json.dump(master_dictionary, f)
+
 
 if __name__ == "__main__":
     from model.model_hooked import WrappedModel
@@ -84,6 +91,6 @@ if __name__ == "__main__":
     this_server.service.link_model(m)
     this_server.service.link_scheduler(Scheduler)
     print("Starting server.")
-    atexit.register(print(master_dictionary))
+    atexit.register(dump)
     atexit.register(this_server.close)
     this_server.start()
