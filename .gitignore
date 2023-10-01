@@ -153,3 +153,5 @@ TestCases/AlexnetSplit/partitioner_datapoints/external/*
 pyrightconfig.json
 MyData/Datasets/imagenet/sample_images
 MyData/TestResults
+user_lib/datasets/imagenet/sample_images
+sshd_config
