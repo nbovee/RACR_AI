@@ -21,7 +21,7 @@ GCPInstance:
 SteveOldLaptop:
   device_type: raspberrypi-4b
   connection_params:
-    - host: 192.168.1.243
+    - host: old-laptop-br.fios-router.home
       user: Steve
       pkey_fp: /home/stevepic95/.ssh/id_rsa
       default: true

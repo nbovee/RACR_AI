@@ -3,9 +3,11 @@ import sys
 from pathlib import Path
 from rpyc.utils.zerodeploy import DeployedServer
 from rpyc.core.stream import SocketStream
-from plumbum import local, CommandNotFound
+from plumbum import local, CommandNotFound, SshMachine
+
 from plumbum.path import copy
 from plumbum.commands.base import BoundCommand
+
 
 
 SERVER_SCRIPT = r"""\
@@ -31,13 +33,22 @@ except Exception:
 
 sys.path.insert(0, here)
 from $MODULE$ import $SERVER$ as ServerCls
-from pnodelib.runner.test import $SERVICE$ as Service
+from participant_lib.participant_service import ParticipantService
+
+from user_lib.dataloaders.$DL-MODULE$ import $DL-CLASS$ as DataLoader
+from user_lib.models.$MOD-MODULE$ import $MOD-CLASS$ as Model
+from user_lib.schedulers.$SCH-MODULE$ import $SCH-CLASS$ as Scheduler
+
+dataloader = DataLoader()
+model = Model()
+scheduler = Scheduler()
+participant_service = ParticipantService(dataloader, model, scheduler)
 
 logger = None
 
-server = ServerCls(Service(), port = 18861, reuse_addr = True, logger = logger, auto_register = True)
-server.start()
+server = ServerCls(participant_service, port = 18861, reuse_addr = True, logger = logger, auto_register = True)
 atexit.register(server.close)
+server.start()
 
 try:
     sys.stdin.read()
@@ -47,25 +58,58 @@ finally:
 
 class ZeroDeployedServer(DeployedServer):
 
-    def __init__(self, remote_machine, service_class, server_class="rpyc.utils.server.ThreadedServer",
+    def __init__(self,
+                 remote_machine: SshMachine,
+                 dataloader: tuple[str, str],
+                 model: tuple[str, str],
+                 scheduler: tuple[str, str],
+                 server_class="rpyc.utils.server.ThreadedServer",
                  python_executable=None):
         self.proc = None
         self.tun = None
         self.remote_machine = remote_machine
         self._tmpdir_ctx = None
 
-        rpyc_root = local.path(rpyc.__file__).up()
+        # Create a temp dir on the remote machine where we make the environment
         self._tmpdir_ctx = remote_machine.tempdir()
         tmp = self._tmpdir_ctx.__enter__()
+
+        # Copy over the rpyc, participant_lib, and user_lib code
+        rpyc_root = local.path(rpyc.__file__).up()
         copy(rpyc_root, tmp / "rpyc")
 
-        pnodelib_root = local.path((Path(__file__).parent.parent / "pnodelib").absolute())
-        copy(pnodelib_root, tmp/ "pnodelib")
+        participant_lib_root = local.path((Path(__file__).parent.parent / "participant_lib").absolute())
+        copy(participant_lib_root, tmp/ "participant_lib")
 
+        user_lib_root = local.path((Path(__file__).parent.parent / "user_lib").absolute())
+        copy(user_lib_root, tmp/ "user_lib")
+
+        # Substitute placeholders in the remote script and send it over
         script = (tmp / "deployed-rpyc.py")
         modname, clsname = server_class.rsplit(".", 1)
-        script.write(SERVER_SCRIPT.replace("$MODULE$", modname).replace(
-            "$SERVER$", clsname).replace("$SERVICE$", service_class))
+        dl_module, dl_class = dataloader
+        m_module, m_class = model
+        sch_module, sch_class = scheduler
+        script.write(
+            SERVER_SCRIPT.replace(
+                "$MODULE$", modname
+            ).replace(
+                "$SERVER$", clsname
+            ).replace(
+                "$DL-MODULE$", dl_module
+            ).replace(
+                "$DL-CLASS$", dl_class
+            ).replace(
+                "$MOD-MODULE$", m_module
+            ).replace(
+                "$MOD-CLASS$", m_class
+            ).replace(
+                "$SCH-MODULE$", sch_module
+            ).replace(
+                "$SCH-CLASS$", sch_class
+            )
+        )
+
         if isinstance(python_executable, BoundCommand):
             cmd = python_executable
         elif python_executable:
