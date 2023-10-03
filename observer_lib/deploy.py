@@ -39,10 +39,7 @@ from user_lib.dataloaders.$DL-MODULE$ import $DL-CLASS$ as DataLoader
 from user_lib.models.$MOD-MODULE$ import $MOD-CLASS$ as Model
 from user_lib.schedulers.$SCH-MODULE$ import $SCH-CLASS$ as Scheduler
 
-dataloader = DataLoader()
-model = Model()
-scheduler = Scheduler()
-participant_service = ParticipantService(dataloader, model, scheduler)
+participant_service = ParticipantService(DataLoader, Model, Scheduler)
 
 logger = None
 

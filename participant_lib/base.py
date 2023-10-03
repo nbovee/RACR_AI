@@ -11,5 +11,10 @@ import threading
 import pickle
 
 
-class BaseRunner:
+class BaseDataLoader:
+    """
+    All user-defined DataLoaders should inherit from this class to ensure compatibility with 
+    the ParticipantService they will be loaded into for experiments.
+    """
+    
 

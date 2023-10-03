@@ -15,21 +15,24 @@ class ParticipantService(rpyc.Service):
     def add_aliases(cls, new_aliases: list[str]):
         cls.ALIASES.extend(new_aliases)
 
-    def __init__(self, dataloader, model, scheduler, add_aliases=[]):
+    def __init__(self, DataLoaderCls, ModelCls, SchedulerCls, add_aliases=[]):
         super().__init__()
         ParticipantService.add_aliases(add_aliases)
         self.client_connections = {}
-        self.set_dataloader(dataloader)
-        self.set_model(model)
-        self.set_scheduler(scheduler)
+        self.prepare_dataloader(DataLoaderCls)
+        self.prepare_model(ModelCls)
+        self.prepare_scheduler(SchedulerCls)
 
-    def set_dataloader(self, dataloader):
+    def prepare_dataloader(self, DataLoaderCls):
+        dataloader = DataLoaderCls(self.client_connections)
         self.dataloader = dataloader
 
-    def set_model(self, model):
+    def prepare_model(self, ModelCls):
+        model = ModelCls()
         self.model = model
 
-    def set_scheduler(self, scheduler):
+    def prepare_scheduler(self, SchedulerCls):
+        scheduler = SchedulerCls()
         self.scheduler = scheduler
 
     def on_connect(self, conn):
