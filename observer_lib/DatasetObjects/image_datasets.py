@@ -35,6 +35,6 @@ class ImageDataset(Dataset):
         # TODO: the original script expects the dataloader to return [val, splitlayer, filename]
         return image, label
 
-# Here is the instance that should be imported from the module (e.g., from imagenet import imagenet1000_rgb)
+# Here is the instance that should be imported from the module (e.g., from image_datasets import imagenet1000_rgb)
 imagenet1000_rgb = ImageDataset(CLASS_TEXTFILE, IMG_DIRECTORY)
 

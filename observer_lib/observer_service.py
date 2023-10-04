@@ -4,6 +4,7 @@ from importlib import import_module
 from pathlib import Path
 
 
+@rpyc.service
 class ObserverService(rpyc.Service):
     """
     The service exposed by the observer device during experiments.
@@ -24,16 +25,19 @@ class ObserverService(rpyc.Service):
             if self.client_connections[host] == conn:
                 self.client_connections.pop(host)
 
-    def exposed_dataset_load(self, module_name:str, dataset_instance:str):
+    @rpyc.exposed
+    def dataset_load(self, module_name:str, dataset_instance:str):
         module = import_module(module_name)
         self.dataset = getattr(module, dataset_instance)
 
-    def exposed_dataset_len(self):
+    @rpyc.exposed
+    def dataset_len(self):
         if not self.dataset:
             return None
         return len(self.dataset)
 
-    def exposed_dataset_getitem(self, idx: int):
+    @rpyc.exposed
+    def dataset_getitem(self, idx: int):
         if not self.dataset:
             return None
         return self.dataset[idx]

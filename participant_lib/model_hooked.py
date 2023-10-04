@@ -1,19 +1,13 @@
-import os
-import sys
 import numpy as np
 from PIL import Image
 import torch
 import torch.nn as nn
-from torchvision import transforms, models
-import threading
+from torchvision import models
 import time
-import pandas as pd
 import atexit
 from collections import OrderedDict
-import uuid
 import copy
 from torchinfo import summary
-from torchinfo.layer_info import LayerInfo
 
 
 class HookExitException(Exception):
@@ -22,28 +16,6 @@ class HookExitException(Exception):
     def __init__(self, out, *args: object) -> None:
         super().__init__(*args)
         self.result = out
-
-
-class ThreadSafeDict(dict):
-    """
-    Used by WrappedModel to make the master_dict thread-safe. Works just like a normal dict,
-    except a thread lock is used when adding or removing elements.
-    """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._lock = threading.Lock()
-
-    def __getitem__(self, key):
-        with self._lock:
-            return super().__getitem__(key)
-
-    def __setitem__(self, key, value):
-        with self._lock:
-            super().__setitem__(key, value)
-
-    def __delitem__(self, key):
-        with self._lock:
-            super().__delitem__(key)
 
 
 class WrappedModel(nn.Module):
@@ -66,7 +38,7 @@ class WrappedModel(nn.Module):
         print(*args)
         super().__init__(*args)
         self.timer = time.perf_counter_ns
-        self.master_dict = ThreadSafeDict() # this should be the externally accessible dict
+        self.master_dict = dict # this should be the externally accessible dict
         self.inference_dict = {} # collation dict for the current partition of a given inference
         self.forward_dict = {} # dict for the results from the current forward pass
         self.device = kwargs.get("device", "cpu")
@@ -213,13 +185,14 @@ class WrappedModel(nn.Module):
         self.current_module_start_index = start
 
         # prepare inference_id for storing results
-        inference_id = str(uuid.uuid4()) if inference_id is None else inference_id
-        if len(str(inference_id).split(".")) > 1:
-            suffix = int(str(inference_id).split(".")[-1]) + 1
+        _inference_id = "unlogged" if inference_id is None else inference_id
+        if len(str(_inference_id).split(".")) > 1:
+            suffix = int(str(_inference_id).split(".")[-1]) + 1
         else:
             suffix = 0
-        self.inference_dict['inference_id'] = str(str(inference_id).split(".")[0])+f'.{suffix}'
-        
+        _inference_id = str(str(_inference_id).split(".")[0])+f'.{suffix}'
+        self.inference_dict['inference_id'] = _inference_id
+        print(f"{_inference_id} id beginning.")
         # actually run the forward pass
         try:
             if self.mode != "train":
@@ -236,13 +209,14 @@ class WrappedModel(nn.Module):
         # process and clean dicts before leaving forward
         self.inference_dict['layer_information'] = self.forward_dict
         if log:
-            self.master_dict[str(inference_id).split(".")[0]] = copy.deepcopy(self.inference_dict) # only one deepcopy needed
+            self.master_dict[str(_inference_id).split(".")[0]] = copy.deepcopy(self.inference_dict) # only one deepcopy needed
         self.inference_dict = {}
         self.forward_dict = copy.deepcopy(self.empty_buffer_dict)
 
         # reset hook variables
         self.current_module_stop_index = None
         self.current_module_index = None
+        print(f"{_inference_id} end.")
         return out
 
     def parse_input(self, input):
@@ -283,3 +257,4 @@ class WrappedModel(nn.Module):
 if __name__ == "__main__":
     # running as main will test baselines on the running platform
     m = WrappedModel()
+

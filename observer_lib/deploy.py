@@ -8,6 +8,7 @@ from plumbum import local, CommandNotFound, SshMachine
 from plumbum.path import copy
 from plumbum.commands.base import BoundCommand
 
+import ssh
 
 
 SERVER_SCRIPT = r"""\
@@ -39,7 +40,7 @@ from user_lib.dataloaders.$DL-MODULE$ import $DL-CLASS$ as DataLoader
 from user_lib.models.$MOD-MODULE$ import $MOD-CLASS$ as Model
 from user_lib.schedulers.$SCH-MODULE$ import $SCH-CLASS$ as Scheduler
 
-participant_service = ParticipantService(DataLoader, Model, Scheduler)
+participant_service = ParticipantService(DataLoader, Model, Scheduler, $ROLE$)
 
 logger = None
 
@@ -56,7 +57,8 @@ finally:
 class ZeroDeployedServer(DeployedServer):
 
     def __init__(self,
-                 remote_machine: SshMachine,
+                 device: ssh.Device,
+                 role: str,
                  dataloader: tuple[str, str],
                  model: tuple[str, str],
                  scheduler: tuple[str, str],
@@ -64,11 +66,11 @@ class ZeroDeployedServer(DeployedServer):
                  python_executable=None):
         self.proc = None
         self.tun = None
-        self.remote_machine = remote_machine
+        self.remote_machine = device.as_pb_sshmachine()
         self._tmpdir_ctx = None
 
         # Create a temp dir on the remote machine where we make the environment
-        self._tmpdir_ctx = remote_machine.tempdir()
+        self._tmpdir_ctx = self.remote_machine.tempdir()
         tmp = self._tmpdir_ctx.__enter__()
 
         # Copy over the rpyc, participant_lib, and user_lib code
@@ -104,26 +106,28 @@ class ZeroDeployedServer(DeployedServer):
                 "$SCH-MODULE$", sch_module
             ).replace(
                 "$SCH-CLASS$", sch_class
+            ).replace(
+                "$ROLE$", role
             )
         )
 
         if isinstance(python_executable, BoundCommand):
             cmd = python_executable
         elif python_executable:
-            cmd = remote_machine[python_executable]
+            cmd = self.remote_machine[python_executable]
         else:
             major = sys.version_info[0]
             minor = sys.version_info[1]
             cmd = None
             for opt in [f"python{major}.{minor}", f"python{major}"]:
                 try:
-                    cmd = remote_machine[opt]
+                    cmd = self.remote_machine[opt]
                 except CommandNotFound:
                     pass
                 else:
                     break
             if not cmd:
-                cmd = remote_machine.python
+                cmd = self.remote_machine.python
 
         self.proc = cmd.popen(script, new_session=True)
 
