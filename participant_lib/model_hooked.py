@@ -1,19 +1,13 @@
-import os
-import sys
 import numpy as np
 from PIL import Image
 import torch
 import torch.nn as nn
-from torchvision import transforms, models
-import threading
+from torchvision import models
 import time
-import pandas as pd
 import atexit
 from collections import OrderedDict
-import uuid
 import copy
 from torchinfo import summary
-from torchinfo.layer_info import LayerInfo
 
 
 class HookExitException(Exception):
@@ -22,28 +16,6 @@ class HookExitException(Exception):
     def __init__(self, out, *args: object) -> None:
         super().__init__(*args)
         self.result = out
-
-
-class ThreadSafeDict(dict):
-    """
-    Used by WrappedModel to make the master_dict thread-safe. Works just like a normal dict,
-    except a thread lock is used when adding or removing elements.
-    """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._lock = threading.Lock()
-
-    def __getitem__(self, key):
-        with self._lock:
-            return super().__getitem__(key)
-
-    def __setitem__(self, key, value):
-        with self._lock:
-            super().__setitem__(key, value)
-
-    def __delitem__(self, key):
-        with self._lock:
-            super().__delitem__(key)
 
 
 class WrappedModel(nn.Module):
@@ -66,7 +38,7 @@ class WrappedModel(nn.Module):
         print(*args)
         super().__init__(*args)
         self.timer = time.perf_counter_ns
-        self.master_dict = ThreadSafeDict() # this should be the externally accessible dict
+        self.master_dict = dict # this should be the externally accessible dict
         self.inference_dict = {} # collation dict for the current partition of a given inference
         self.forward_dict = {} # dict for the results from the current forward pass
         self.device = kwargs.get("device", "cpu")
@@ -285,3 +257,4 @@ class WrappedModel(nn.Module):
 if __name__ == "__main__":
     # running as main will test baselines on the running platform
     m = WrappedModel()
+
