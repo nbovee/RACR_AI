@@ -1,37 +1,44 @@
 from __future__ import annotations
-import rpyc
-import uuid
-from rpyc.utils.server import ThreadedServer
-from rpyc.utils.helpers import classpartial
-from rpyc.utils.zerodeploy import DeployedServer
-from rpyc.utils.factory import connect
 from rpyc.core.protocol import Connection
 from importlib import import_module
-import blosc2
-import time
-import atexit
-import threading
-import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 
 from observer_lib.observer_service import ObserverService
 from participant_lib.participant_service import ParticipantService
 
 
-class RemoteDataset(Dataset):
+class BaseDataset(Dataset):
+    """
+    Implements basic functionality required for any dataset.
+    """
+
+    length: int
+
+    def __getitem__(self, index):
+        """
+        Ensures elements from the dataset can be retrieved using square bracket notation.
+        """
+        raise NotImplementedError("Datasets must have a __getitem__ method")
+
+    def __len__(self) -> int:
+        return self.length
+
+
+class RemoteDataset(BaseDataset):
     """
     Wraps the real torch dataset on the other side of the connection
     """
+
     def __init__(self, conn: Connection, module_name: str, dataset_instance_from_module: str):
         self._conn = conn
         self.get_remote_service().dataset_load(module_name, dataset_instance_from_module)
-        self.length = self.get_remote_service().dataset_len()
+        length = self.get_remote_service().dataset_len()
+        if length is None:
+            raise ValueError("Could not get length from remote dataset")
+        self.length = length
 
     def __getitem__(self, index):
         return self.get_remote_service().dataset_getitem(index)
-
-    def __len__(self):
-        return self.length
 
     def get_remote_service(self) -> ObserverService | ParticipantService:
         if self._conn.root is None:
@@ -49,14 +56,32 @@ class BaseDataLoader:
     DATASET_MODULE_NAME: str
     DATASET_INSTANCE_FROM_MODULE: str
 
+    MAX_ITERATIONS: int | None = None
+
     conn: Connection | None = None
-    dataset: Dataset
+    dataset: BaseDataset
+    index: int
 
     def __iter__(self) -> BaseDataLoader:
-        raise NotImplementedError(f"DataLoaders must have an __iter__ method implemented!")
+        if self.dataset is None:
+            raise ValueError("Attempted to iterate over a DataLoader before init_dataset was called!")
+        self.index = 0
+        if self.dataset.length is not None and self.MAX_ITERATIONS is not None:
+            self.length = min((self.dataset.length, self.MAX_ITERATIONS))
+        elif self.dataset.length is None:
+            raise ValueError("Dataset was not properly initialized")
+        else:
+            self.length = self.dataset.length
+        return self
 
     def __next__(self):
-        raise NotImplementedError(f"DataLoaders must have a __next__ method implemented!")
+        if self.length is None:
+            raise ValueError("Cannot iterate through DataLoader before init_dataset is called!")
+        if self.index >= self.length:
+            raise StopIteration
+        result = self.dataset[self.index]
+        self.index += 1
+        return result 
 
     def init_dataset(self, client_connections: dict[str, Connection]):
         """

@@ -34,11 +34,11 @@ class WrappedModel(nn.Module):
         "watts_used": None,
     }
 
-    def __init__(self, *args, dict = None, **kwargs):
+    def __init__(self, *args, master_dict = None, **kwargs):
         print(*args)
         super().__init__(*args)
         self.timer = time.perf_counter_ns
-        self.master_dict = dict # this should be the externally accessible dict
+        self.master_dict = master_dict # this should be the externally accessible dict
         self.inference_dict = {} # collation dict for the current partition of a given inference
         self.forward_dict = {} # dict for the results from the current forward pass
         self.device = kwargs.get("device", "cpu")

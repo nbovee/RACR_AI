@@ -17,14 +17,6 @@ class ObserverService(rpyc.Service):
         sys.path.append(str(self.USR_DATASETS_PATH.absolute()))
         self.client_connections = {}
 
-    def on_connect(self, conn):
-        self.client_connections[conn.root.gethost()] = conn
-
-    def on_disconnect(self, conn):
-        for host in self.client_connections:
-            if self.client_connections[host] == conn:
-                self.client_connections.pop(host)
-
     @rpyc.exposed
     def dataset_load(self, module_name:str, dataset_instance:str):
         module = import_module(module_name)
@@ -42,3 +34,6 @@ class ObserverService(rpyc.Service):
             return None
         return self.dataset[idx]
 
+    @rpyc.exposed
+    def send_log(self):
+        pass
