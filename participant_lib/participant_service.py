@@ -15,7 +15,13 @@ class ParticipantService(rpyc.Service):
     ZeroDeployedServer instance used to deploy this service. This service expects certain methods
     to be available for each.
     """
+
     ALIASES = ["PARTICIPANT"]
+
+    dataloader: BaseDataLoader
+    scheduler: BaseScheduler
+    model: WrappedModel
+    master_dict: dict
 
     @classmethod
     def add_aliases(cls, new_aliases: list[str]):
@@ -37,25 +43,15 @@ class ParticipantService(rpyc.Service):
 
     def prepare_dataloader(self, DataLoaderCls):
         dataloader = DataLoaderCls()
-        dataloader.acknowledge_clients(self.client_connections)
-        
+        dataloader.init_dataset(self.client_connections)
         self.dataloader = dataloader
 
     def prepare_model(self, ModelCls):
-        model = ModelCls()
-        self.model = model
+        self.model = ModelCls(master_dict = self.master_dict)
 
     def prepare_scheduler(self, SchedulerCls):
-        scheduler = SchedulerCls()
-        self.scheduler = scheduler
+        self.scheduler = SchedulerCls(self.dataloader, self.model)
 
-    def on_connect(self, conn):
-        self.client_connections[conn.root.getrole()] = conn
-
-    def on_disconnect(self, conn):
-        for host in self.client_connections:
-            if self.client_connections[host] == conn:
-                self.client_connections.pop(host)
 
     @rpyc.exposed
     def dataset_load(self, module_name:str, dataset_instance:str):
