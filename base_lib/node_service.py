@@ -3,7 +3,7 @@ from queue import PriorityQueue
 import rpyc
 from rpyc.core.protocol import Connection
 
-from communication import DataSender, Request
+from communication import Request
 
 @rpyc.service
 class NodeService(rpyc.Service):
@@ -14,7 +14,6 @@ class NodeService(rpyc.Service):
 
     active_connections: dict[str, NodeService]
     node_name: str
-    data_sender: DataSender
     inbox: PriorityQueue[Request]
     status: str
 
