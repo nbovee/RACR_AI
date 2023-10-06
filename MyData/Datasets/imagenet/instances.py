@@ -55,5 +55,5 @@ imagenet10_rgb = ImagenetDataset(max_iter=10)
 # This gives all 999 images as torch Tensors
 imagenet999_tr = ImagenetDataset(transform=transforms.ToTensor)
 # And this gives the same, but only the first 10 
-imagenet10_tr = ImagenetDataset(transform=transforms.ToTensor)
+imagenet10_tr = ImagenetDataset(transform=transforms.ToTensor, max_iter=10)
 

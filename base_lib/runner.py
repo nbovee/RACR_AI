@@ -1,6 +1,5 @@
 from __future__ import annotations
 from queue import PriorityQueue
-from rpyc.core.protocol import Connection
 from typing import Callable
 
 from base_lib.communication import Request
@@ -16,7 +15,7 @@ class BaseRunner:
     WrappedModel as parameters to __init__ so it can essentially guide the participating node 
     through its required sequence of tasks.
     """
-    
+
     node: NodeService
     rulebook: dict[str, Callable[[BaseRunner, Request], None]]
     inbox: PriorityQueue

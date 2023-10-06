@@ -17,7 +17,7 @@ class ObserverService(NodeService):
     """
 
     ALIASES: list[str] = ["OBSERVER"]
-    USR_DATASETS_PATH: Path = Path(__file__).parent / "DatasetObjects"
+    USR_DATASETS_PATH: Path = Path(__file__).parent.parent / "MyData" / "Datasets"
 
     performance_metrics: dict
     performance_metrics_lock: threading.Lock
@@ -54,11 +54,11 @@ class ObserverService(NodeService):
         sys.path.append(str(self.USR_DATASETS_PATH.absolute()))
 
     @rpyc.exposed
-    def get_dataset_reference(self, module_name:str, dataset_instance:str) -> BaseDataset:
+    def get_dataset_reference(self, dataset_dirname:str, dataset_instance:str) -> BaseDataset:
         """
         Allows remote nodes to access datasets stored on the observer as if they were local objects.
         """
-        module = import_module(module_name)
+        module = import_module(f"{dataset_dirname}.instances")
         dataset = getattr(module, dataset_instance)
         return dataset
 
