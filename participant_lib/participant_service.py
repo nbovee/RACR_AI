@@ -2,69 +2,46 @@ import rpyc
 from typing import Type
 from torch.utils.data import Dataset
 
-from dataloader import BaseDataLoader
+from data_retriever import BaseDataRetriever
 from model_hooked import WrappedModel
-from scheduler import BaseScheduler
+from base_lib.runner import BaseRunner
 
 @rpyc.service
 class ParticipantService(rpyc.Service):
     """
     The service exposed by all participating nodes regardless of their node role in the test case.
     A test case is defined by mapping node roles to physical devices available on the local
-    network, and a node role is defined by passing a dataloader, model, and scheduler to the 
+    network, and a node role is defined by passing a DataRetriever, model, and runner to the 
     ZeroDeployedServer instance used to deploy this service. This service expects certain methods
     to be available for each.
     """
 
     ALIASES = ["PARTICIPANT"]
 
-    dataloader: BaseDataLoader
-    scheduler: BaseScheduler
+    data_retriever: BaseDataRetriever
+    runner: BaseRunner
     model: WrappedModel
     master_dict: dict
 
-    @classmethod
-    def add_aliases(cls, new_aliases: list[str]):
-        cls.ALIASES.extend(new_aliases)
-
     def __init__(self,
-                 DataLoaderCls: Type[BaseDataLoader],
+                 DataRetrieverCls: Type[BaseDataRetriever],
                  ModelCls: Type[WrappedModel],
-                 SchedulerCls: Type[BaseScheduler],
-                 role: str,
+                 RunnerCls: Type[BaseRunner],
                  downstream_dataset: Dataset | None = None):
         super().__init__()
-        self.role = role
-        ParticipantService.add_aliases([role])
-        self.client_connections = {}
-        self.prepare_dataloader(DataLoaderCls)
+        self.active_connections = {}
+        self.prepare_data_retriever(DataRetrieverCls)
         self.prepare_model(ModelCls)
-        self.prepare_scheduler(SchedulerCls)
+        self.prepare_runner(RunnerCls)
 
-    def prepare_dataloader(self, DataLoaderCls):
-        dataloader = DataLoaderCls()
-        dataloader.init_dataset(self.client_connections)
-        self.dataloader = dataloader
+    def prepare_data_retriever(self, DataRetrieverCls):
+        DataRetriever = DataRetrieverCls()
+        DataRetriever.init_dataset(self.active_connections)
+        self.data_retriever = DataRetriever
 
     def prepare_model(self, ModelCls):
         self.model = ModelCls(master_dict = self.master_dict)
 
-    def prepare_scheduler(self, SchedulerCls):
-        self.scheduler = SchedulerCls(self.dataloader, self.model)
+    def prepare_runner(self, RunnerCls):
+        self.runner = RunnerCls(self.data_retriever, self.model)
 
-
-    @rpyc.exposed
-    def dataset_load(self, module_name:str, dataset_instance:str):
-        pass
-
-    @rpyc.exposed
-    def dataset_len(self):
-        pass
-
-    @rpyc.exposed
-    def dataset_getitem(self, idx: int):
-        pass
-
-    @rpyc.exposed
-    def getrole(self):
-        return self.role

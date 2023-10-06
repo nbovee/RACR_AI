@@ -1,20 +1,20 @@
 """
-This file can define multiple custom DataLoader classes that will be available for future test
+This file can define multiple custom DataRetriever classes that will be available for future test
 cases.
 """
 
 
-from participant_lib.dataloader import BaseDataLoader
+from participant_lib.data_retriever import BaseDataRetriever
 
 
-class ImagenetFromObserverDL(BaseDataLoader):
+class ImagenetFromObserverDL(BaseDataRetriever):
     """
-    The BaseDataLoader class takes care of a lot, but it cannot be used as-is because its 
+    The BaseDataRetriever class takes care of a lot, but it cannot be used as-is because its 
     class attributes are empty, so it doesn't know where to find its dataset. There are 2 
-    ways to tweak the behavior of a custom DataLoader: overriding the class attributes or
+    ways to tweak the behavior of a custom DataRetriever: overriding the class attributes or
     the methods. NOTE: the init method can be overridden, but it cannot accept any arguments.
 
-    Here is a basic example of how you'd configure a DataLoader that gets imagenet images
+    Here is a basic example of how you'd configure a DataRetriever that gets imagenet images
     from the ObserverService:
     """
     # How to get the dataset

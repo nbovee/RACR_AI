@@ -36,11 +36,15 @@ sys.path.insert(0, here)
 from $MODULE$ import $SERVER$ as ServerCls
 from participant_lib.participant_service import ParticipantService
 
-from user_lib.dataloaders.$DL-MODULE$ import $DL-CLASS$ as DataLoader
+from user_lib.data_retrievers.$DL-MODULE$ import $DL-CLASS$ as DataRetriever
 from user_lib.models.$MOD-MODULE$ import $MOD-CLASS$ as Model
-from user_lib.schedulers.$SCH-MODULE$ import $SCH-CLASS$ as Scheduler
+from user_lib.runners.$SCH-MODULE$ import $SCH-CLASS$ as Runner
 
-participant_service = ParticipantService(DataLoader, Model, Scheduler, $ROLE$)
+# nice to have the service's formal name correspond to the node's name
+class $NODE_NAME$Service(ParticipantService):
+    ALIASES = ["$NODE_NAME$", "PARTICIPANT"]
+
+participant_service = $NODE_NAME$Service(DataRetriever, Model, Runner, $ROLE$)
 
 logger = None
 
@@ -58,10 +62,10 @@ class ZeroDeployedServer(DeployedServer):
 
     def __init__(self,
                  device: ssh.Device,
-                 role: str,
-                 dataloader: tuple[str, str],
+                 node_name: str,
+                 DataRetriever: tuple[str, str],
                  model: tuple[str, str],
-                 scheduler: tuple[str, str],
+                 runner: tuple[str, str],
                  server_class="rpyc.utils.server.ThreadedServer",
                  python_executable=None):
         self.proc = None
@@ -86,11 +90,11 @@ class ZeroDeployedServer(DeployedServer):
         # Substitute placeholders in the remote script and send it over
         script = (tmp / "deployed-rpyc.py")
         modname, clsname = server_class.rsplit(".", 1)
-        dl_module, dl_class = dataloader
+        dl_module, dl_class = DataRetriever
         m_module, m_class = model
-        sch_module, sch_class = scheduler
+        sch_module, sch_class = runner
         script.write(
-            SERVER_SCRIPT.replace(
+            SERVER_SCRIPT.replace(    # type: ignore
                 "$MODULE$", modname
             ).replace(
                 "$SERVER$", clsname
@@ -107,7 +111,7 @@ class ZeroDeployedServer(DeployedServer):
             ).replace(
                 "$SCH-CLASS$", sch_class
             ).replace(
-                "$ROLE$", role
+                "$NODE_NAME$", node_name
             )
         )
 
