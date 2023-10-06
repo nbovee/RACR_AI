@@ -1,9 +1,9 @@
+from __future__ import annotations
+from queue import PriorityQueue
 import rpyc
 from rpyc.core.protocol import Connection
-from torch import Tensor
-from typing import Any
 
-from communication import DataReceiver, DataSender, Envelope, Request
+from communication import DataSender, Request
 
 @rpyc.service
 class NodeService(rpyc.Service):
@@ -12,34 +12,39 @@ class NodeService(rpyc.Service):
     """
     ALIASES: list[str]
 
-    client_connections: dict[str, Connection]
-    data_receiver: DataReceiver
+    active_connections: dict[str, NodeService]
+    node_name: str
     data_sender: DataSender
-    role: str
+    inbox: PriorityQueue[Request]
+    status: str
 
     def __init__(self):
         super().__init__()
+        self.node_name = self.ALIASES[0].upper().strip()
+        self.active_connections = {}
 
-    def on_connect(self, conn):
-        self.client_connections[conn.root.getrole()] = conn
+    def get_connection(self, node_name: str) -> NodeService:
+        node_name = node_name.upper().strip()
+        if node_name in self.active_connections:
+            return self.active_connections[node_name]
+        conn = rpyc.connect_by_service(node_name)
+        self.active_connections[node_name] = conn.root
+        return self.active_connections[node_name]
 
-    def on_disconnect(self, conn):
-        for host in self.client_connections:
-            if self.client_connections[host] == conn:
-                self.client_connections.pop(host)
+    def on_connect(self, conn: Connection):
+        if isinstance(conn.root, NodeService):
+            self.active_connections[conn.root.get_node_name()] = conn.root
 
-    @rpyc.service
+    def on_disconnect(self, conn: Connection):
+        for name in self.active_connections:
+            if self.active_connections[name] == conn:
+                self.active_connections.pop(name)
+
+    @rpyc.exposed
     def echo(self, input: str) -> str:
         return input
 
-    @rpyc.service
-    def get_role(self) -> str:
-        return self.role
+    @rpyc.exposed
+    def get_node_name(self) -> str:
+        return self.node_name
 
-    @rpyc.service
-    def send_data(self, data: Envelope) -> None:
-        self.data_receiver.accept(data)
-
-    @rpyc.service
-    def get_data(self, request: Request) -> Any:
-        self.data_sender.process(request)
