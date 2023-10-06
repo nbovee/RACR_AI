@@ -1,10 +1,10 @@
 import rpyc
 from typing import Type
-from torch.utils.data import Dataset
 
 from data_retriever import BaseDataRetriever
 from model_hooked import WrappedModel
 from base_lib.runner import BaseRunner
+
 
 @rpyc.service
 class ParticipantService(rpyc.Service):
@@ -26,8 +26,8 @@ class ParticipantService(rpyc.Service):
     def __init__(self,
                  DataRetrieverCls: Type[BaseDataRetriever],
                  ModelCls: Type[WrappedModel],
-                 RunnerCls: Type[BaseRunner],
-                 downstream_dataset: Dataset | None = None):
+                 RunnerCls: Type[BaseRunner]
+                 ):
         super().__init__()
         self.active_connections = {}
         self.prepare_data_retriever(DataRetrieverCls)
