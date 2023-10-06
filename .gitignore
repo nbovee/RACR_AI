@@ -139,11 +139,6 @@ libcudnn8-dev_8.4.0.27-1+cuda11.6_amd64.deb
 # Code Specifics
 /tmp
 
-# removed /test from ignore to make transferring test containers simpler
-
-# Private-ish info about devices in this file
-device_info
-
 # Docker image tarballs are too large for the 1MB GitHub filesize limit
 api/Docker_images/*.tar
 
@@ -152,6 +147,5 @@ TestCases/AlexnetSplit/partitioner_datapoints/external/*
 
 pyrightconfig.json
 MyData/Datasets/imagenet/sample_images
-MyData/TestResults
 user_lib/datasets/imagenet/sample_images
 sshd_config
