@@ -18,11 +18,15 @@ class ObserverService(NodeService):
     USR_DATASETS_PATH: Path = Path(__file__).parent.parent / "MyData" / "Datasets"
 
     performance_metrics: dict
-    performance_metrics_lock: threading.Lock
 
     def __init__(self):
         super().__init__()
+        self.performance_metrics = {}
         sys.path.append(str(self.USR_DATASETS_PATH.absolute()))
+
+    @rpyc.exposed
+    def get_performance_metrics(self) -> dict:
+        return self.performance_metrics
 
     @rpyc.exposed
     def get_dataset_reference(self, dataset_dirname:str, dataset_instance:str) -> BaseDataset:

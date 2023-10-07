@@ -5,6 +5,7 @@ from rpyc.core.protocol import Connection
 
 from communication import Request
 
+
 @rpyc.service
 class NodeService(rpyc.Service):
     """
