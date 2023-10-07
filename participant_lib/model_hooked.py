@@ -190,7 +190,7 @@ class WrappedModel(nn.Module):
                 start: int = 0,
                 end: int | float = np.inf,
                 log: bool = True,
-                by_node: str | None = None):
+                by_node: str | None = None) -> torch.Tensor:
         """Wraps the pretrained forward pass to utilize our slicing."""
         end = self.splittable_layer_count if end == np.inf else end
 
