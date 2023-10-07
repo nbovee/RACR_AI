@@ -9,6 +9,14 @@ class MasterDict:
 
     def set(self, key: str, value: dict):
         with self.lock:
+            if key in self._dict:
+                if value.get('layer_information'):
+                    self._dict[key]['layer_information'].update(value)
+                else:
+                    raise ValueError(
+                        f"Cannot integrate inference_dict without 'layer_information' field"
+                    )
+                return
             self._dict[key] = value
 
     def get(self, key: str):

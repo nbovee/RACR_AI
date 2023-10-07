@@ -29,7 +29,7 @@ class ObserverService(NodeService):
         return self.performance_metrics
 
     @rpyc.exposed
-    def get_dataset_reference(self, dataset_dirname:str, dataset_instance:str) -> BaseDataset:
+    def get_dataset_reference(self, dataset_dirname: str, dataset_instance: str) -> BaseDataset:
         """
         Allows remote nodes to access datasets stored on the observer as if they were local objects.
         """
