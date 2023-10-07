@@ -7,7 +7,7 @@ from torch import Tensor
 from PIL import Image
 from torch.utils.data import DataLoader
 
-from base_lib.communication import Task
+import base_lib.tasks as tasks
 from base_lib.node_service import NodeService
 from observer_lib.observer_service import ObserverService
 from participant_lib.model_hooked import WrappedModel
@@ -23,21 +23,26 @@ class BaseRunner:
     """
 
     node: NodeService
-    rulebook: dict[str, Callable[[BaseRunner, Task], None]]
     inbox: PriorityQueue
     active_connections: dict[str, NodeService]
     model: WrappedModel | None
     status: str
+    task_map: dict[type, Callable]
 
     def __init__(self,
                  node: NodeService,
-                 rulebook: dict[str, Callable[[BaseRunner, Task], None]]
                  ):
         self.node = node
-        self.rulebook = rulebook
         self.active_connections = self.node.active_connections
         self.inbox = self.node.inbox
         self.status = self.node.status
+
+        self.task_map = {
+            tasks.SimpleInferenceTask: self.simple_inference,
+            tasks.SingleInputInferenceTask: self.inference_sequence_per_input,
+            tasks.InferOverDatasetTask: self.infer_dataset,
+            tasks.FinishSignalTask: self.finish
+        }
 
         self.get_ready()
 
@@ -46,17 +51,10 @@ class BaseRunner:
             self.model = self.node.model
         self.status = "ready"
 
-    def process(self, task: Task):
-        if task.task_type == "finish":
-            self.finish()
-            return
-        try:
-            func = self.rulebook[task.task_type]
-        except KeyError:
-            raise ValueError(
-                f"Rulebook has no key for task type {task.task_type}"
-            )
-        func(self, task)
+    def process(self, task: tasks.Task):
+        task_class = type(task)
+        corresponding_method = self.task_map[task_class]
+        corresponding_method(task)
 
     def start(self):
         self.status = "running"
@@ -68,21 +66,14 @@ class BaseRunner:
     def finish(self):
         self.status = "finished"
 
-    def simple_inference(self,
-                         input: Tensor | Image.Image,
-                         inference_id: str | None = None,
-                         start_layer: int = 0,
-                         end_layer: int | float = np.inf,
-                         downstream_node: str | None = None
-                         ):
+    def simple_inference(self, task: tasks.SimpleInferenceTask):
         assert self.model is not None
-        if inference_id is None:
-            inference_id = str(uuid.uuid4())
-        out = self.model.forward(input, inference_id=inference_id, start=start_layer, end=end_layer)
+        inference_id = task.inference_id if task.inference_id is not None else str(uuid.uuid4())
+        out = self.model.forward(task.input, inference_id=inference_id, start=task.start_layer, end=task.end_layer)
         
-        if downstream_node is not None:
-            downstream_node_svc = self.node.get_connection(downstream_node)
-            downstream_task = SingleInferenceTask(out, inference_id=inference_id, start_layer=end_layer)
+        if task.downstream_node is not None:
+            downstream_node_svc = self.node.get_connection(task.downstream_node)
+            downstream_task = tasks.SingleInputInferenceTask(out, inference_id=inference_id, start_layer=task.end_layer)
             downstream_node_svc.give_task(downstream_task)
 
     def inference_sequence_per_input(self, input: Tensor | Image.Image):
@@ -91,7 +82,7 @@ class BaseRunner:
         you'd implement that behavior, most likely using the provided self.simple_inference method,
         possibly with start_layer and end_layer being determined with a partitioner.
         """
-        self.simple_inference(input: Tensor | Image.Image)
+        self.simple_inference(input: Tensor | Image.Image)    # pyright: ignore
 
     def infer_dataset(self, dataset_dirname: str, dataset_instance: str):
         """
