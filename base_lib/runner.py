@@ -1,6 +1,5 @@
 from __future__ import annotations
 import uuid
-import numpy as np
 from queue import PriorityQueue
 from typing import Callable
 from torch import Tensor
@@ -29,9 +28,7 @@ class BaseRunner:
     status: str
     task_map: dict[type, Callable]
 
-    def __init__(self,
-                 node: NodeService,
-                 ):
+    def __init__(self, node: NodeService):
         self.node = node
         self.active_connections = self.node.active_connections
         self.inbox = self.node.inbox
@@ -41,7 +38,7 @@ class BaseRunner:
             tasks.SimpleInferenceTask: self.simple_inference,
             tasks.SingleInputInferenceTask: self.inference_sequence_per_input,
             tasks.InferOverDatasetTask: self.infer_dataset,
-            tasks.FinishSignalTask: self.finish
+            tasks.FinishSignalTask: self.on_finish
         }
 
         self.get_ready()
@@ -63,17 +60,17 @@ class BaseRunner:
                 current_task = self.inbox.get()
                 self.process(current_task)
 
-    def finish(self):
+    def on_finish(self):
         self.status = "finished"
 
     def simple_inference(self, task: tasks.SimpleInferenceTask):
         assert self.model is not None
         inference_id = task.inference_id if task.inference_id is not None else str(uuid.uuid4())
         out = self.model.forward(task.input, inference_id=inference_id, start=task.start_layer, end=task.end_layer)
-        
-        if task.downstream_node is not None:
+ 
+        if task.downstream_node is not None and isinstance(task.end_layer, int):
             downstream_node_svc = self.node.get_connection(task.downstream_node)
-            downstream_task = tasks.SingleInputInferenceTask(out, inference_id=inference_id, start_layer=task.end_layer)
+            downstream_task = tasks.SimpleInferenceTask(self.node.node_name, out, inference_id=inference_id, start_layer=task.end_layer)
             downstream_node_svc.give_task(downstream_task)
 
     def inference_sequence_per_input(self, input: Tensor | Image.Image):
