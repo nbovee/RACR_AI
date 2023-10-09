@@ -36,7 +36,6 @@ sys.path.insert(0, here)
 from $MODULE$ import $SERVER$ as ServerCls
 from participant_lib.participant_service import ParticipantService
 
-from user_lib.data_retrievers.$DL-MODULE$ import $DL-CLASS$ as DataRetriever
 from user_lib.models.$MOD-MODULE$ import $MOD-CLASS$ as Model
 from user_lib.runners.$SCH-MODULE$ import $SCH-CLASS$ as Runner
 
@@ -44,7 +43,7 @@ from user_lib.runners.$SCH-MODULE$ import $SCH-CLASS$ as Runner
 class $NODE_NAME$Service(ParticipantService):
     ALIASES = ["$NODE_NAME$", "PARTICIPANT"]
 
-participant_service = $NODE_NAME$Service(DataRetriever, Model, Runner, $ROLE$)
+participant_service = $NODE_NAME$Service(Model, Runner)
 
 logger = None
 
@@ -63,7 +62,6 @@ class ZeroDeployedServer(DeployedServer):
     def __init__(self,
                  device: ssh.Device,
                  node_name: str,
-                 DataRetriever: tuple[str, str],
                  model: tuple[str, str],
                  runner: tuple[str, str],
                  server_class="rpyc.utils.server.ThreadedServer",
@@ -90,7 +88,6 @@ class ZeroDeployedServer(DeployedServer):
         # Substitute placeholders in the remote script and send it over
         script = (tmp / "deployed-rpyc.py")
         modname, clsname = server_class.rsplit(".", 1)
-        dl_module, dl_class = DataRetriever
         m_module, m_class = model
         sch_module, sch_class = runner
         script.write(
@@ -98,10 +95,6 @@ class ZeroDeployedServer(DeployedServer):
                 "$MODULE$", modname
             ).replace(
                 "$SERVER$", clsname
-            ).replace(
-                "$DL-MODULE$", dl_module
-            ).replace(
-                "$DL-CLASS$", dl_class
             ).replace(
                 "$MOD-MODULE$", m_module
             ).replace(
