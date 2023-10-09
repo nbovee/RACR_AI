@@ -3,7 +3,7 @@ from queue import PriorityQueue
 import rpyc
 from rpyc.core.protocol import Connection
 
-from communication import Task
+from tasks import Task
 
 
 @rpyc.service
