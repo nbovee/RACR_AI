@@ -15,10 +15,11 @@ from participant_lib.participant_service import ParticipantService
 
 class BaseRunner:
     """
-    The runner has a more general role than the name suggests. A better name for this component
-    for the future might be "runner" or something similar. The runner takes a DataRetriever and a 
-    WrappedModel as parameters to __init__ so it can essentially guide the participating node 
-    through its required sequence of tasks.
+    The runner guides the participating node through its required sequence of tasks. It works by
+    pulling tasks from the node's inbox (a threadsafe PriorityQueue) and processing each task 
+    according to the corresponding method outlined in the `task_map` attribute. The user can
+    customize the behavior of a participating node by overwriting the methods that correspond to 
+    each task that may be given to the node.
     """
 
     node: NodeService

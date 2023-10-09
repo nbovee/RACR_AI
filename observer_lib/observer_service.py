@@ -1,4 +1,3 @@
-import threading
 import rpyc
 import sys
 from importlib import import_module
@@ -6,6 +5,7 @@ from pathlib import Path
 
 from base_lib.dataset import BaseDataset
 from base_lib.node_service import NodeService
+from base_lib.metric_dict import MasterDict
 
 
 @rpyc.service
@@ -17,16 +17,16 @@ class ObserverService(NodeService):
     ALIASES: list[str] = ["OBSERVER"]
     USR_DATASETS_PATH: Path = Path(__file__).parent.parent / "MyData" / "Datasets"
 
-    performance_metrics: dict
+    master_dict: MasterDict
 
     def __init__(self):
         super().__init__()
-        self.performance_metrics = {}
+        self.master_dict = MasterDict()
         sys.path.append(str(self.USR_DATASETS_PATH.absolute()))
 
     @rpyc.exposed
-    def get_performance_metrics(self) -> dict:
-        return self.performance_metrics
+    def get_master_dict(self) -> MasterDict:
+        return self.master_dict
 
     @rpyc.exposed
     def get_dataset_reference(self, dataset_dirname: str, dataset_instance: str) -> BaseDataset:
