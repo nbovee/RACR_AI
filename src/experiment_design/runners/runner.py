@@ -2,15 +2,25 @@ from __future__ import annotations
 import uuid
 from queue import PriorityQueue
 from typing import Callable
+import rpyc
 from torch import Tensor
 from PIL import Image
 from torch.utils.data import DataLoader
+from rpyc.utils.factory import DiscoveryError
 
 import tasks.tasks as tasks
 from rpc_services.node_service import NodeService
 from rpc_services.observer_service import ObserverService
 from rpc_services.participant_service import ParticipantService
 from models.model_hooked import WrappedModel
+
+
+class HandshakeFailureException(Exception):
+    """
+    Raised if a node fails to establish a handshake with any of its specified partners.
+    """
+    def __init__(self, message):
+        super().__init__(message)
 
 
 class BaseRunner:
@@ -20,6 +30,9 @@ class BaseRunner:
     according to the corresponding method outlined in the `task_map` attribute. The user can
     customize the behavior of a participating node by overwriting the methods that correspond to 
     each task that may be given to the node.
+
+    This should hopefully provide a straightforward interface for us to extend the testbed's 
+    functionality later on by adding new task types. The end user is able to do so as well.
     """
 
     node: NodeService
@@ -28,6 +41,7 @@ class BaseRunner:
     model: WrappedModel | None
     status: str
     task_map: dict[type, Callable]
+    partners: list[str]
 
     def __init__(self, node: NodeService):
         self.node = node
@@ -47,7 +61,28 @@ class BaseRunner:
     def get_ready(self):
         if isinstance(self.node, ParticipantService):
             self.model = self.node.model
+        self.handshake()
         self.status = "ready"
+
+    def handshake(self, n_attempts: int = 10):
+        partners = self.partners.copy()
+        success = False
+        while n_attempts > 0:
+            for i in range(len(partners), 0, -1):
+                try:
+                    self.node.get_connection(partners[i])
+                    partners.pop(i)
+                except DiscoveryError:
+                    continue
+            if not len(partners):
+                success = True
+                break
+            else:
+                n_attempts -= 1
+
+        if not success:
+            raise HandshakeFailureException(f"Node {self.node.node_name} failed to handshake with {partners}")
+
 
     def process(self, task: tasks.Task):
         task_class = type(task)
@@ -74,23 +109,32 @@ class BaseRunner:
             downstream_task = tasks.SimpleInferenceTask(self.node.node_name, out, inference_id=inference_id, start_layer=task.end_layer)
             downstream_node_svc.give_task(downstream_task)
 
-    def inference_sequence_per_input(self, input: Tensor | Image.Image):
+    def inference_sequence_per_input(self, task: tasks.SingleInputInferenceTask):
         """
         If you want to use a partitioner or conduct multiple inferences per input, this is where
         you'd implement that behavior, most likely using the provided self.simple_inference method,
         possibly with start_layer and end_layer being determined with a partitioner.
         """
-        self.simple_inference(input: Tensor | Image.Image)    # pyright: ignore
+        raise NotImplementedError(f"inference_sequence_per_input not implemented for {self.node.node_name} runner")
 
-    def infer_dataset(self, dataset_dirname: str, dataset_instance: str):
+    def infer_dataset(self, task: tasks.InferOverDatasetTask):
         """
         Run the self.inference_sequence_per_input method for each element in the dataset.
         """
+        dataset_dirname, dataset_instance = task.dataset_dirname, task.dataset_instance
         observer_svc = self.node.get_connection("OBSERVER")
         assert isinstance(observer_svc, ObserverService)
         dataset = observer_svc.get_dataset_reference(dataset_dirname, dataset_instance)
         dataloader = DataLoader(dataset, batch_size=1)
 
         for input in dataloader:
-            self.inference_sequence_per_input(input)
+            subtask = tasks.SingleInputInferenceTask("SELF", input)
+            self.inference_sequence_per_input(subtask)
 
+
+class BaseObserverRunner(BaseRunner):
+    """
+    Starts with a predetermined list of tasks in its inbox that essentially coreograph the 
+    whole experiment at a high level.
+    """
+    pass
