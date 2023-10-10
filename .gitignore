@@ -146,4 +146,3 @@ TestCases/AlexnetSplit/partitioner_datapoints/local/*
 TestCases/AlexnetSplit/partitioner_datapoints/external/*
 
 pyrightconfig.json
-MyData/Dataset_Data
