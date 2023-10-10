@@ -3,7 +3,7 @@ from queue import PriorityQueue
 import rpyc
 from rpyc.core.protocol import Connection
 
-from tasks import Task
+from tasks.tasks import Task
 
 
 @rpyc.service
@@ -20,6 +20,7 @@ class NodeService(rpyc.Service):
 
     def __init__(self):
         super().__init__()
+        self.status = "initializing"
         self.node_name = self.ALIASES[0].upper().strip()
         self.active_connections = {}
 

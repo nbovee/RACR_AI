@@ -1,27 +1,33 @@
 import pathlib
 from PIL import Image
 
-from base_lib.dataset import BaseDataset
+from dataset import BaseDataset
 import torchvision.transforms as transforms
 
 
-SOURCE_DIRECTORY = pathlib.Path(__file__).parent
-
-
 class ImagenetDataset(BaseDataset):
+    """
+    Here's an example of a 'user-defined' dataset class extending the included BaseDataset
+    class. Below the class definitions are some instances of this class that can later be 
+    referenced by participating nodes for experiments.
+    """
 
-    CLASS_TEXTFILE = SOURCE_DIRECTORY / "imagenet_classes.txt"
-    IMG_DIRECTORY = SOURCE_DIRECTORY / "sample_images"
+    CLASS_TEXTFILE: pathlib.Path
+    IMG_DIRECTORY: pathlib.Path
 
     def __init__(self,
                  max_iter: int = -1,
                  transform=None,
                  target_transform=None
                  ):
+        self.CLASS_TEXTFILE = self.DATA_SOURCE_DIRECTORY / "imagenet" / "imagenet_classes.txt"
+        self.IMG_DIRECTORY = self.DATA_SOURCE_DIRECTORY / "imagenet" / "sample_images"
+
         with open(self.CLASS_TEXTFILE, 'r') as file:
             img_labels = "\n".split(file.read())
         if len(img_labels) > max_iter > 0:
             img_labels = img_labels[:max_iter]
+
         self.img_labels = img_labels
         self.img_dir = self.IMG_DIRECTORY
         self.transform = transform
@@ -42,7 +48,6 @@ class ImagenetDataset(BaseDataset):
         if self.target_transform:
             label = self.target_transform(label)
 
-        # TODO: the original script expects the Dataloader to return [val, splitlayer, filename]
         return image, label
 
 # Here are the dataset instances the observer can offer to the participants

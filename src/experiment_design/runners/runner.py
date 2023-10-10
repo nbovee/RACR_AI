@@ -6,11 +6,11 @@ from torch import Tensor
 from PIL import Image
 from torch.utils.data import DataLoader
 
-import base_lib.tasks as tasks
-from base_lib.node_service import NodeService
-from observer_lib.observer_service import ObserverService
-from participant_lib.model_hooked import WrappedModel
-from participant_lib.participant_service import ParticipantService
+import tasks.tasks as tasks
+from rpc_services.node_service import NodeService
+from rpc_services.observer_service import ObserverService
+from rpc_services.participant_service import ParticipantService
+from models.model_hooked import WrappedModel
 
 
 class BaseRunner:
