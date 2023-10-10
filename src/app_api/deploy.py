@@ -8,7 +8,7 @@ from plumbum import local, CommandNotFound, SshMachine
 from plumbum.path import copy
 from plumbum.commands.base import BoundCommand
 
-import ssh
+import device_mgmt as dm
 
 
 SERVER_SCRIPT = r"""\
@@ -60,7 +60,7 @@ finally:
 class ZeroDeployedServer(DeployedServer):
 
     def __init__(self,
-                 device: ssh.Device,
+                 device: dm.Device,
                  node_name: str,
                  model: tuple[str, str],
                  runner: tuple[str, str],

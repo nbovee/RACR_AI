@@ -113,7 +113,7 @@ class RegressionPartitioner(Partitioner):
                     current_linreg.manually_set_weights(torch.as_tensor(0), torch.quantile(y, q=0.5))
                 else:
                     # normalize to avoid explosion
-                    mmax = max(max(x),max(y))
+                    mmax = max(max(x),max(y))    # pyright: ignore
                     x = x/mmax
                     y = y/mmax                             
                     for i in range(current_linreg.training_iter):

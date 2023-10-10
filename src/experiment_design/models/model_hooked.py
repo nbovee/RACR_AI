@@ -10,7 +10,7 @@ from collections import OrderedDict
 import copy
 from torchinfo import summary
 
-from base_lib.metric_dict import MasterDict
+from records.master_dict import MasterDict
 
 
 class HookExitException(Exception):

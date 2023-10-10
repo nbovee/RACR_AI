@@ -1,12 +1,74 @@
 import paramiko
-from plumbum import SshMachine
+import socket
+import ipaddress
 import pathlib
 import yaml
-
+from plumbum import SshMachine
+from concurrent.futures import ThreadPoolExecutor
+from queue import Queue
 from typing import Self
 
-from lan import LAN
-from exceptions import SSHAuthenticationException, DeviceUnavailableException
+
+class SSHAuthenticationException(Exception):
+    """
+    Raised if an authentication error occurs while attempting to connect to a device over SSH, but
+    the device is available and listening.
+    """
+    def __init__(self, message):
+        super().__init__(message)
+
+
+class DeviceUnavailableException(Exception):
+    """
+    Raised if an attempt is made to connect to a device that is either unavailable or not 
+    listening on the specified port.
+    """
+    def __init__(self, message):
+        super().__init__(message)
+
+
+class LAN:
+    """
+    Helps with general networking tasks that are not specific to one host.
+    """
+    LOCAL_CIDR_BLOCK: list[str] = [str(ip)
+        for ip in ipaddress.ip_network("192.168.1.0/24").hosts()]
+
+    @classmethod
+    def host_is_reachable(cls, host: str, port: int, timeout: int | float) -> bool:
+        """
+        Checks if the host is available at all, but does not attempt to authenticate.
+        """
+        try:
+            test_socket = socket.create_connection((host, port), timeout)
+            test_socket.close()
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def get_available_hosts(cls,
+        try_hosts: list[str] = LOCAL_CIDR_BLOCK,
+        port: int =22,
+        timeout: int | float = 0.5,
+        max_threads: int = 50) -> list[str]:
+        """
+        Takes a list of strings (ip or hostname) and returns a new list containing only those that
+        are available, without attempting to authenticate. Uses threading.
+        """
+        available_hosts = Queue()
+
+        def check_host(host: str):
+            """
+            Adds host to queue if reachable.
+            """
+            if cls.host_is_reachable(host, port, timeout):
+                available_hosts.put(host)
+
+        with ThreadPoolExecutor(max_workers=max_threads) as executor:
+            executor.map(check_host, try_hosts)
+
+        return list(available_hosts.queue)
 
 
 class SSHConnectionParams:
@@ -16,6 +78,9 @@ class SSHConnectionParams:
     same strategy is always used, we can neatly bundle the required credentials (and remember
     them between sessions) using this class.
     """
+
+    SSH_PORT: int = 22
+    TIMEOUT_SECONDS: int | float = 0.5
 
     host: str  # hostname or ip
     user: str
@@ -55,9 +120,7 @@ class SSHConnectionParams:
         accordingly.
         """
         self.host = host
-
-        SSH_PORT, TIMEOUT_SECONDS = 22, 0.5
-        self._host_reachable = LAN.host_is_reachable(host, SSH_PORT, TIMEOUT_SECONDS)
+        self._host_reachable = LAN.host_is_reachable(host, self.SSH_PORT, self.TIMEOUT_SECONDS)
 
     def _set_user(self, username: str) -> None:
         """
@@ -161,7 +224,9 @@ class Device:
         Returns a plumbum.SshMachine instance to represent the device.
         """
         if self.working_cparams is not None:
-            return SshMachine(self.working_cparams.host, user=self.working_cparams.user, keyfile=str(self.working_cparams.pkey_fp))
+            return SshMachine(self.working_cparams.host,
+                              user=self.working_cparams.user,
+                              keyfile=str(self.working_cparams.pkey_fp))
         else:
             raise DeviceUnavailableException(f"Cannot make plumbum object from device {self._name}: not available.")
 
@@ -172,10 +237,16 @@ class DeviceMgr:
     instances to/from the persistent datafile.
     """
 
-    devices: list[Device]
+    DATAFILE_PATH: pathlib.Path = pathlib.Path(__file__).parent / "AppData" / "known_devices.yaml"
 
-    def __init__(self, dfile_path: pathlib.Path) -> None:
-        self.datafile_path = dfile_path
+    devices: list[Device]
+    datafile_path: pathlib.Path
+
+    def __init__(self, dfile_path: pathlib.Path | None = None) -> None:
+        if dfile_path is None:
+            self.datafile_path = self.DATAFILE_PATH
+        elif isinstance(dfile_path, pathlib.Path):
+            self.datafile_path = dfile_path
         self._load()
 
     def get_devices(self, available_only: bool = False) -> list[Device]:

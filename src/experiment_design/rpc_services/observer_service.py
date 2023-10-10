@@ -3,9 +3,9 @@ import sys
 from importlib import import_module
 from pathlib import Path
 
-from base_lib.dataset import BaseDataset
-from base_lib.node_service import NodeService
-from base_lib.metric_dict import MasterDict
+from datasets.dataset import BaseDataset
+from rpc_services.node_service import NodeService
+from records.master_dict import MasterDict
 
 
 @rpyc.service
@@ -29,11 +29,11 @@ class ObserverService(NodeService):
         return self.master_dict
 
     @rpyc.exposed
-    def get_dataset_reference(self, dataset_dirname: str, dataset_instance: str) -> BaseDataset:
+    def get_dataset_reference(self, dataset_module: str, dataset_instance: str) -> BaseDataset:
         """
         Allows remote nodes to access datasets stored on the observer as if they were local objects.
         """
-        module = import_module(f"{dataset_dirname}.instances")
+        module = import_module(f"datasets.{dataset_module}")
         dataset = getattr(module, dataset_instance)
         return dataset
 

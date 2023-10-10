@@ -1,10 +1,10 @@
 import rpyc
 from typing import Type
 
-from model_hooked import WrappedModel
-from base_lib.runner import BaseRunner
-from base_lib.node_service import NodeService
-from observer_lib.observer_service import ObserverService
+from models.model_hooked import WrappedModel
+from runners.runner import BaseRunner
+from rpc_services.node_service import NodeService
+from rpc_services.observer_service import ObserverService
 
 
 @rpyc.service
