@@ -42,8 +42,8 @@ class NodeService(rpyc.Service):
                 self.active_connections.pop(name)
 
     @rpyc.exposed
-    def echo(self, input: str) -> str:
-        return input
+    def get_status(self) -> str:
+        return self.status
 
     @rpyc.exposed
     def get_node_name(self) -> str:
