@@ -105,16 +105,16 @@ class InferOverDatasetTask(Task):
     """
 
     priority: int = 5
-    dataset_dirname: str 
+    dataset_module: str 
     dataset_instance: str 
 
     def __init__(self,
                  from_node: str,
-                 dataset_dirname: str,
+                 dataset_module: str,
                  dataset_instance: str
                  ):
         super().__init__(from_node)
-        self.dataset_dirname = dataset_dirname
+        self.dataset_module = dataset_module
         self.dataset_instance = dataset_instance
 
 
@@ -128,3 +128,4 @@ class FinishSignalTask(Task):
 
     def __init__(self, from_node: str):
         super().__init__(from_node)
+
