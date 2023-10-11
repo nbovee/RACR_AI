@@ -4,11 +4,11 @@ from pathlib import Path
 from rpyc.utils.zerodeploy import DeployedServer
 from rpyc.core.stream import SocketStream
 from plumbum import local, CommandNotFound, SshMachine
-
 from plumbum.path import copy
 from plumbum.commands.base import BoundCommand
 
 import device_mgmt as dm
+import utils
 
 
 SERVER_SCRIPT = r"""\
@@ -16,6 +16,22 @@ import sys
 import os
 import atexit
 import shutil
+import logging
+import logging.handlers
+
+def setup_remote_logger(node_name, host, observer_ip):
+    logger = logging.getLogger(f"{node_name}_logger")
+    formatter = logging.Formatter(f"{node_name}@{host}: %(message)s")
+
+    socket_handler = logging.handlers.SocketHandler(observer_ip, 9000)
+    socket_handler.setFormatter(formatter)
+
+    logger.addHandler(socket_handler)
+    return logger
+
+logger = setup_remote_logger("$NODE_NAME$", "$PARTICIPANT_HOST$", "$OBSERVER_IP$")
+
+logger.info("Zero deploy sequence started. Removing __pycache__ and *.pyc files from tempdir.")
 
 here = os.path.dirname(__file__)
 os.chdir(here)
@@ -33,28 +49,43 @@ except Exception:
     pass
 
 sys.path.insert(0, here)
+
+logger.info("Executing remote script line 'from $MODULE$ import $SERVER$ as ServerCls'")
 from $MODULE$ import $SERVER$ as ServerCls
-from participant_lib.participant_service import ParticipantService
 
-from user_lib.models.$MOD-MODULE$ import $MOD-CLASS$ as Model
-from user_lib.runners.$SCH-MODULE$ import $SCH-CLASS$ as Runner
+logger.info("Importing ParticipantService in remote script")
+from experiment_design.rpc_services.participant_service import ParticipantService
 
-# nice to have the service's formal name correspond to the node's name
+logger.info("Importing $MOD-CLASS$ from experiment_design.models.$MOD-MODULE$.")
+from experiment_design.models.$MOD-MODULE$ import $MOD-CLASS$ as Model
+logger.info("Importing $SCH-CLASS$ from experiment_design.runners.$SCH-MODULE$.")
+from experiment_design.runners.$SCH-MODULE$ import $SCH-CLASS$ as Runner
+
+logger.info("Defining new class $NODE_NAME$Service(ParticipantService) to control formal name.")
 class $NODE_NAME$Service(ParticipantService):
     ALIASES = ["$NODE_NAME$", "PARTICIPANT"]
 
+logger.info("Constructing participant_service instance.")
 participant_service = $NODE_NAME$Service(Model, Runner)
 
-logger = None
+logger.info("Starting RPC server.")
+server = ServerCls(participant_service, port=18861, reuse_addr=True, logger=logger, auto_register=True)
 
-server = ServerCls(participant_service, port = 18861, reuse_addr = True, logger = logger, auto_register = True)
-atexit.register(server.close)
+def close_server_atexit():
+    logger.info("Closing server due to atexit invocation.")
+    server.close()
+
+def close_server_finally():
+    logger.info("Closing server after 'finally' clause was reached in SERVER_SCRIPT.")
+    server.close()
+
+atexit.register(close_server_atexit)
 server.start()
 
 try:
     sys.stdin.read()
 finally:
-    server.close()
+    close_server_finally()
 """
 
 class ZeroDeployedServer(DeployedServer):
@@ -66,6 +97,7 @@ class ZeroDeployedServer(DeployedServer):
                  runner: tuple[str, str],
                  server_class="rpyc.utils.server.ThreadedServer",
                  python_executable=None):
+        assert device.working_cparams is not None
         self.proc = None
         self.tun = None
         self.remote_machine = device.as_pb_sshmachine()
@@ -90,6 +122,8 @@ class ZeroDeployedServer(DeployedServer):
         modname, clsname = server_class.rsplit(".", 1)
         m_module, m_class = model
         sch_module, sch_class = runner
+        observer_ip = utils.get_local_ip()
+        participant_host = device.working_cparams.host
         script.write(
             SERVER_SCRIPT.replace(    # type: ignore
                 "$MODULE$", modname
@@ -105,6 +139,10 @@ class ZeroDeployedServer(DeployedServer):
                 "$SCH-CLASS$", sch_class
             ).replace(
                 "$NODE_NAME$", node_name
+            ).replace(
+                "$OBSERVER_IP$", observer_ip
+            ).replace(
+                "$PARTICIPANT_HOST$", participant_host
             )
         )
 
