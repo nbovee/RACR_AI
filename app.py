@@ -24,48 +24,15 @@ from rich.box import SQUARE
 from rich.table import Table
 from getmac import get_mac_address
 from pathlib import Path
+from app_api import log_handling, utils
 
 from src.app_api.device_mgmt import DeviceMgr, SSHSession
 
 
-
-# path to root of tracr project
-PROJECT_ROOT = Path(__file__).parent.absolute()
-
-# path to console text files
-CONSOLE_TXT_DIR = PROJECT_ROOT / "Assets" / "console_text"
-
-# path to the main logfile
-MAIN_LOG_FP = PROJECT_ROOT / "PersistentData" / "Logs" / "app.log"
+PROJECT_ROOT = utils.get_repo_root()
 
 
-# logger setup
-def setup_logging(verbosity):
-    levels = [logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG]
-    file_format = "%(asctime)s - %(module)s - %(levelname)s: %(message)s"
-
-    logger = logging.getLogger("tracr_logger")
-    logger.setLevel(logging.DEBUG)
-
-    # all messages will be logged to this file
-    file_handler = logging.FileHandler(MAIN_LOG_FP.expanduser())
-    file_handler.setLevel(logging.DEBUG)
-
-    # only messages of the given level or higher will be logged to console
-    console_handler = RichHandler(
-        show_time=False, show_path=False, rich_tracebacks=True
-    )
-    console_handler.setLevel(levels[min(verbosity, len(levels) - 1)])
-
-    # different formats for file and console logs
-    file_formatter = logging.Formatter(file_format)
-    file_handler.setFormatter(file_formatter)
-
-    # Adding the handlers to the logger
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-
-    return logger
+logger = log_handling.setup_logging()
 
 
 # CLI is split up into submodules responsible for different operations, so
