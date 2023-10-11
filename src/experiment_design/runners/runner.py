@@ -148,12 +148,16 @@ class BaseExecutor(BaseRunner):
     def simple_inference(self, task: tasks.SimpleInferenceTask):
         assert self.model is not None
         inference_id = task.inference_id if task.inference_id is not None else str(uuid.uuid4())
-        out = self.model.forward(task.input, inference_id=inference_id, start=task.start_layer, end=task.end_layer)
+        out = self.model.forward(
+            task.input, inference_id=inference_id, start=task.start_layer, end=task.end_layer
+        )
  
         if task.downstream_node is not None and isinstance(task.end_layer, int):
             downstream_node_svc = self.node.get_connection(task.downstream_node)
             assert isinstance(downstream_node_svc, ParticipantService)
-            downstream_task = tasks.SimpleInferenceTask(self.node.node_name, out, inference_id=inference_id, start_layer=task.end_layer)
+            downstream_task = tasks.SimpleInferenceTask(
+                self.node.node_name, out, inference_id=inference_id, start_layer=task.end_layer
+            )
             downstream_node_svc.give_task(downstream_task)
 
     def inference_sequence_per_input(self, task: tasks.SingleInputInferenceTask):
@@ -162,16 +166,18 @@ class BaseExecutor(BaseRunner):
         you'd implement that behavior, most likely using the provided self.simple_inference method,
         possibly with start_layer and end_layer being determined with a partitioner.
         """
-        raise NotImplementedError(f"inference_sequence_per_input not implemented for {self.node.node_name} Executor")
+        raise NotImplementedError(
+            f"inference_sequence_per_input not implemented for {self.node.node_name} Executor"
+        )
 
     def infer_dataset(self, task: tasks.InferOverDatasetTask):
         """
         Run the self.inference_sequence_per_input method for each element in the dataset.
         """
-        dataset_dirname, dataset_instance = task.dataset_dirname, task.dataset_instance
+        dataset_module, dataset_instance = task.dataset_module, task.dataset_instance
         observer_svc = self.node.get_connection("OBSERVER")
         assert isinstance(observer_svc, ObserverService)
-        dataset = observer_svc.get_dataset_reference(dataset_dirname, dataset_instance)
+        dataset = observer_svc.get_dataset_reference(dataset_module, dataset_instance)
         dataloader = DataLoader(dataset, batch_size=1)
 
         for input in dataloader:
@@ -208,8 +214,10 @@ class BaseDelegator(BaseRunner):
             sleep(1)
 
         if not success:
-            straglers = [p for p in self.partners
-                if self.node.get_connection(p).get_status() != "ready"]
+            straglers = [
+                p for p in self.partners
+                if self.node.get_connection(p).get_status() != "ready"
+            ]
             raise AwaitParticipantException(f"Observer had to wait too long for nodes {straglers}")
 
     def send_playbook(self):

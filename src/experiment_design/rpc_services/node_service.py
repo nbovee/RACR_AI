@@ -3,7 +3,6 @@ import rpyc
 from rpyc.core.protocol import Connection
 
 
-
 @rpyc.service
 class NodeService(rpyc.Service):
     """
