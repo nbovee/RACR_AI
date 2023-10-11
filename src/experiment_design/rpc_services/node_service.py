@@ -1,9 +1,7 @@
 from __future__ import annotations
-from queue import PriorityQueue
 import rpyc
 from rpyc.core.protocol import Connection
 
-from tasks.tasks import Task
 
 
 @rpyc.service
@@ -15,7 +13,6 @@ class NodeService(rpyc.Service):
 
     active_connections: dict[str, NodeService]
     node_name: str
-    inbox: PriorityQueue[Task]
     status: str
 
     def __init__(self):
@@ -49,7 +46,4 @@ class NodeService(rpyc.Service):
     def get_node_name(self) -> str:
         return self.node_name
 
-    @rpyc.exposed
-    def give_task(self, task: Task):
-        self.inbox.put(task)
 

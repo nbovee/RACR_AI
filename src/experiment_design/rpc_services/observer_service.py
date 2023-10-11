@@ -4,6 +4,7 @@ from importlib import import_module
 from pathlib import Path
 
 from datasets.dataset import BaseDataset
+from experiment_design.runners.runner import BaseDelegator
 from rpc_services.node_service import NodeService
 from records.master_dict import MasterDict
 
@@ -18,6 +19,7 @@ class ObserverService(NodeService):
     USR_DATASETS_PATH: Path = Path(__file__).parent.parent / "MyData" / "Datasets"
 
     master_dict: MasterDict
+    delegator: BaseDelegator
 
     def __init__(self):
         super().__init__()
