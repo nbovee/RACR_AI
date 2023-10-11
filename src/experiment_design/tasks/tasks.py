@@ -8,11 +8,11 @@ from dataclasses import dataclass, field
 @dataclass(order=True)
 class Task:
     """
-    Each node, including the Observer node, has an attribute named "inbox", which is a
-    PriorityQueue of Task objects. They are sorted by their "priority" attribute in ascending
-    order (lowest first). When the "start" method is called on a node, its runner will begin
-    popping tasks from the inbox. The runner has a method corresponding to each type of task
-    it expects to see in its inbox. The `task_map` attribute shows which is paired with which.
+    Each participating node has an attribute named "inbox", which is a PriorityQueue of Task
+    objects. They are sorted by their "priority" attribute in ascending order (lowest first).
+    When the "start" method is called on a node, its runner will begin popping tasks from the
+    inbox. The runner has a method corresponding to each type of task it expects to see in its
+    inbox. The `task_map` attribute shows which is paired with which.
 
     The runner will wait for new tasks to arrive if its inbox is empty. The node will only stop
     when its runner processes a `FinishSignalTask` object.

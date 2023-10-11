@@ -1,8 +1,10 @@
 import rpyc
 from typing import Type
+from queue import PriorityQueue
 
+from tasks.tasks import Task
 from models.model_hooked import WrappedModel
-from runners.runner import BaseRunner
+from runners.runner import BaseExecutor
 from rpc_services.node_service import NodeService
 from rpc_services.observer_service import ObserverService
 
@@ -19,12 +21,13 @@ class ParticipantService(NodeService):
 
     ALIASES = ["PARTICIPANT"]
 
-    runner: BaseRunner
+    executor: BaseExecutor
     model: WrappedModel
+    inbox: PriorityQueue[Task]
 
     def __init__(self,
                  ModelCls: Type[WrappedModel],
-                 RunnerCls: Type[BaseRunner]
+                 RunnerCls: Type[BaseExecutor]
                  ):
         super().__init__()
         self.prepare_model(ModelCls)
@@ -39,4 +42,11 @@ class ParticipantService(NodeService):
     def prepare_runner(self, RunnerCls):
         self.runner = RunnerCls(self)
 
+    @rpyc.exposed
+    def give_task(self, task: Task):
+        self.inbox.put(task)
 
+    @rpyc.exposed
+    def run(self):
+        assert self.status == "ready"
+        self.executor.start()
