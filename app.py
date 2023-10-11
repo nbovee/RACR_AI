@@ -25,7 +25,7 @@ from rich.table import Table
 from getmac import get_mac_address
 from pathlib import Path
 
-from onodelib.ssh import DeviceMgr, SSHSession
+from src.app_api.device_mgmt import DeviceMgr, SSHSession
 
 
 
