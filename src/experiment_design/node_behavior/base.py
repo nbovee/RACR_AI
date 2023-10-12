@@ -1,19 +1,22 @@
 from __future__ import annotations
-from time import sleep
+import logging
+import logging
 import uuid
-from queue import PriorityQueue
-from typing import Callable
 import rpyc
-from torch import Tensor
-from PIL import Image
+import torch.nn as nn
+from typing import Type
+from queue import PriorityQueue
+from importlib import import_module
+from rpyc.core.protocol import Connection
+from time import sleep
+from typing import Callable
 from torch.utils.data import DataLoader
 from rpyc.utils.factory import DiscoveryError
 
-import tasks.tasks as tasks
-from rpc_services.node_service import NodeService
-from rpc_services.observer_service import ObserverService
-from rpc_services.participant_service import ParticipantService
-from models.model_hooked import WrappedModel
+import src.experiment_design.tasks.tasks as tasks
+from src.experiment_design.models.model_hooked import WrappedModel
+from src.experiment_design.datasets.dataset import BaseDataset
+from src.experiment_design.records.master_dict import MasterDict
 
 
 class HandshakeFailureException(Exception):
@@ -75,7 +78,7 @@ class BaseRunner:
         partners = self.partners.copy()
         success = False
         while n_attempts > 0:
-            for i in range(len(partners), 0, -1):
+            for i in range(len(partners)-1, 0, -1):
                 try:
                     self.node.get_connection(partners[i])
                     partners.pop(i)
@@ -248,8 +251,156 @@ class BaseDelegator(BaseRunner):
             sleep(5)
         self.on_finish()
 
+@rpyc.service
+class NodeService(rpyc.Service):
+    """
+    Implements all the endpoints common to both participant and observer nodes.
+    """
+    ALIASES: list[str]
+
+    active_connections: dict[str, NodeService]
+    node_name: str
+    status: str
+    logger: logging.Logger
+
+    def __init__(self):
+        super().__init__()
+        self.status = "initializing"
+        self.node_name = self.ALIASES[0].upper().strip()
+        if self.node_name.upper().strip() != "OBSERVER":
+            self.logger = logging.getLogger(f"{self.node_name}_logger")
+        self.active_connections = {}
+
+    def get_connection(self, node_name: str) -> NodeService:
+        node_name = node_name.upper().strip()
+        self.logger.debug(f"Attempting to get connection to {node_name}.")
+        if node_name in self.active_connections:
+            self.logger.debug(f"Connection to {node_name} already memoized.")
+            return self.active_connections[node_name]
+        self.logger.debug(
+            f"Connection to {node_name} not memoized; attempting to access via registry."
+        )
+        conn = rpyc.connect_by_service(node_name, service=self)  # type: ignore
+        self.active_connections[node_name] = conn.root
+        self.logger.info(f"New connection to {node_name} established and memoized.")
+        return self.active_connections[node_name]
+
+    def on_connect(self, conn: Connection):
+        if isinstance(conn.root, NodeService):
+            self.logger.info(
+                f"on_connect method called; memoizing connection to {conn.root.get_node_name()}"
+            )
+            self.active_connections[conn.root.get_node_name()] = conn.root
+
+    def on_disconnect(self, conn: Connection):
+        self.logger.info("on_disconnect method called; removing saved connection.")
+        for name in self.active_connections:
+            if self.active_connections[name] == conn:
+                self.active_connections.pop(name)
+                self.logger.info(f"Removed connection to {name}")
+
+    @rpyc.exposed
+    def get_status(self) -> str:
+        self.logger.debug(f"get_status exposed method called; returning '{self.status}'")
+        return self.status
+
+    @rpyc.exposed
+    def get_node_name(self) -> str:
+        self.logger.debug(f"get_node_name exposed method called; returning '{self.node_name}'")
+        return self.node_name
 
 
+@rpyc.service
+class ObserverService(NodeService):
+    """
+    The service exposed by the observer device during experiments.
+    """
+
+    ALIASES: list[str] = ["OBSERVER"]
+
+    master_dict: MasterDict
+    delegator: BaseDelegator
+
+    def __init__(self, delegator: BaseDelegator):
+        super().__init__()
+        self.logger = logging.getLogger("main_logger")
+        self.master_dict = MasterDict()
+        self.prepare_delegator(delegator)
+
+    def prepare_delegator(self, delegator: BaseDelegator):
+        """
+        Makes sure the delegator is ready to officially start the experiment. Note that the 
+        delegator must already have a playbook and list of partners, set using `set_playbook` and
+        `set_partners`.
+        """
+        self.delegator = delegator
+        self.delegator.link_node(self)
+        self.delegator.get_ready()
+
+    @rpyc.exposed
+    def get_master_dict(self) -> MasterDict:
+        return self.master_dict
+
+    @rpyc.exposed
+    def get_dataset_reference(self, dataset_module: str, dataset_instance: str) -> BaseDataset:
+        """
+        Allows remote nodes to access datasets stored on the observer as if they were local objects.
+        """
+        module = import_module(f"src.experiment_design.datasets.{dataset_module}")
+        dataset = getattr(module, dataset_instance)
+        return dataset
+
+    @rpyc.exposed
+    def send_log(self):
+        pass
+
+    @rpyc.exposed
+    def run(self):
+        assert self.status == "ready"
+        self.delegator.start()
 
 
+@rpyc.service
+class ParticipantService(NodeService):
+    """
+    The service exposed by all participating nodes regardless of their node role in the test case.
+    A test case is defined by mapping node roles to physical devices available on the local
+    network, and a node role is defined by passing a model and runner to the ZeroDeployedServer
+    instance used to deploy this service. This service expects certain methods to be available
+    for each.
+    """
 
+    ALIASES = ["PARTICIPANT"]
+
+    executor: BaseExecutor
+    model: WrappedModel
+    inbox: PriorityQueue[tasks.Task]
+
+    def __init__(self,
+                 ModelCls: Type[nn.Module] | None,
+                 RunnerCls: Type[BaseExecutor]
+                 ):
+        super().__init__()
+        self.prepare_model(ModelCls)
+        self.prepare_runner(RunnerCls)
+
+    def prepare_model(self, ModelCls):
+        observer_svc = self.get_connection("OBSERVER")
+        assert isinstance(observer_svc, ObserverService)
+        master_dict = observer_svc.get_master_dict()
+        if not isinstance(ModelCls, nn.Module):
+            self.model = WrappedModel(master_dict=master_dict)
+        else:
+            self.model = WrappedModel(pretrained=ModelCls(), master_dict=master_dict)
+
+    def prepare_runner(self, RunnerCls):
+        self.runner = RunnerCls(self)
+
+    @rpyc.exposed
+    def give_task(self, task: tasks.Task):
+        self.inbox.put(task)
+
+    @rpyc.exposed
+    def run(self):
+        assert self.status == "ready"
+        self.executor.start()

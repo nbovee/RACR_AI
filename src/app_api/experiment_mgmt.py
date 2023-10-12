@@ -5,13 +5,14 @@ import pickle
 import threading
 from time import sleep
 import rpyc
+from rpyc.utils.factory import DiscoveryError
 from rpyc.utils.server import ThreadedServer
 import yaml
 from rpyc.utils.registry import UDPRegistryServer
 from socketserver import TCPServer
+
 from src.app_api.deploy import ZeroDeployedServer
-from src.experiment_design.rpc_services.observer_service import ObserverService
-from src.experiment_design.runners.runner import BaseDelegator
+from src.experiment_design.node_behavior.base import ObserverService, BaseDelegator
 
 import src.experiment_design.tasks.tasks as tasks
 import src.app_api.utils as utils
@@ -118,8 +119,6 @@ class ExperimentManifest:
         return result
 
 
-
-
 class Experiment:
     """
     The interface the application uses to finally run the experiment.
@@ -131,7 +130,7 @@ class Experiment:
     remote_log_server: TCPServer = TCPServer(("localhost", 9000), log.LogRecordStreamHandler)
     observer_node: ThreadedServer
     observer_conn: ObserverService
-    participant_nodes: list[ZeroDeployedServer]
+    participant_nodes: list[ZeroDeployedServer] = []
 
     def __init__(self, manifest: ExperimentManifest, available_devices: list[dm.Device]):
         self.available_devices = available_devices
@@ -184,9 +183,17 @@ class Experiment:
 
     def wait_for_ready(self) -> None:
         success = False
-        n_attempts = 10
-        self.observer_conn = rpyc.connect("localhost", 18861).root
+        n_attempts = 15
+        observer_connected = False
         while n_attempts > 0:
+            if not observer_connected:
+                try:
+                    self.observer_conn = rpyc.connect_by_service("OBSERVER").root
+                    observer_connected = True
+                except DiscoveryError:
+                    sleep(1)
+                    n_attempts -= 1
+                    continue
             if self.observer_conn.get_status() == "ready":
                 success = True
                 break

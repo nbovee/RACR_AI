@@ -22,7 +22,7 @@ SteveOldLaptop:
   device_type: raspberrypi-4b
   connection_params:
     - host: old-laptop-br.fios-router.home
-      user: Steve
+      user: steve
       pkey_fp: /home/stevepic95/.ssh/id_rsa
       default: true
 
@@ -37,7 +37,7 @@ RACRPi3-1:
 RACRPi3-2:
   device_type: raspberrypi-3
   connection_params:
-    - host: 192.168.1.202
+    - host: 192.168.1.209
       user: racr
       pkey_fp: /home/stevepic95/.ssh/id_rsa
       default: true

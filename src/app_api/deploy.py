@@ -7,8 +7,8 @@ from plumbum import local, CommandNotFound, SshMachine
 from plumbum.path import copy
 from plumbum.commands.base import BoundCommand
 
-import device_mgmt as dm
-import utils
+import src.app_api.device_mgmt as dm
+import src.app_api.utils as utils
 
 
 SERVER_SCRIPT = r"""\
@@ -115,8 +115,8 @@ class ZeroDeployedServer(DeployedServer):
         rpyc_root = local.path(rpyc.__file__).up()
         copy(rpyc_root, tmp / "rpyc")
 
-        experiment_design_root = local.path(utils.get_repo_root() / "src" / "experiment_design")
-        copy(experiment_design_root, tmp / "src" / "experiment_design")
+        src_root = local.path(utils.get_repo_root() / "src")
+        copy(src_root, tmp / "src")
 
         # Substitute placeholders in the remote script and send it over
         script = (tmp / "deployed-rpyc.py")
