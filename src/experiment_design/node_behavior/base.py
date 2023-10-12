@@ -19,6 +19,9 @@ from src.experiment_design.datasets.dataset import BaseDataset
 from src.experiment_design.records.master_dict import MasterDict
 
 
+# TODO: NodeServices should absorb the functionality from Runner
+
+
 class HandshakeFailureException(Exception):
     """
     Raised if a node fails to establish a handshake with any of its specified partners.
@@ -73,26 +76,6 @@ class BaseRunner:
 
     def get_ready(self):
         self.status = "ready"
-
-    def handshake(self, n_attempts: int = 10):
-        partners = self.partners.copy()
-        success = False
-        while n_attempts > 0:
-            for i in range(len(partners)-1, 0, -1):
-                try:
-                    self.node.get_connection(partners[i])
-                    partners.pop(i)
-                except DiscoveryError:
-                    continue
-            if not len(partners):
-                success = True
-                break
-            else:
-                n_attempts -= 1
-            sleep(1)
-
-        if not success:
-            raise HandshakeFailureException(f"Node {self.node.node_name} failed to handshake with {partners}")
 
     def start(self):
         self.status = "running"
@@ -205,12 +188,10 @@ class BaseDelegator(BaseRunner):
         self.node = node
         self.active_connections = self.node.active_connections
         self.status = self.node.status
+        self.partners = self.node.partners
 
     def set_playbook(self, playbook: dict[str, list[tasks.Task]]):
         self.playbook = playbook
-
-    def set_partners(self, partners: list[str]):
-        self.partners = partners
 
     def get_ready(self):
         self.handshake()
@@ -262,14 +243,38 @@ class NodeService(rpyc.Service):
     node_name: str
     status: str
     logger: logging.Logger
+    partners: list[str]
 
-    def __init__(self):
+    def __init__(self, partners: list[str]):
         super().__init__()
         self.status = "initializing"
         self.node_name = self.ALIASES[0].upper().strip()
         if self.node_name.upper().strip() != "OBSERVER":
             self.logger = logging.getLogger(f"{self.node_name}_logger")
         self.active_connections = {}
+        self.partners = partners
+
+    def handshake(self, n_attempts: int = 10, wait_increase_factor: int | float = 1):
+        partners = self.partners.copy()
+        success = False
+        wait_time = 1
+        while n_attempts > 0:
+            for i in range(len(partners)-1, 0, -1):
+                try:
+                    self.get_connection(partners[i])
+                    partners.pop(i)
+                except DiscoveryError:
+                    continue
+            if not len(partners):
+                success = True
+                break
+            else:
+                n_attempts -= 1
+                wait_time *= wait_increase_factor
+            sleep(wait_time)
+
+        if not success:
+            raise HandshakeFailureException(f"Node {self.node_name} failed to handshake with {partners}")
 
     def get_connection(self, node_name: str) -> NodeService:
         node_name = node_name.upper().strip()
@@ -299,6 +304,9 @@ class NodeService(rpyc.Service):
                 self.active_connections.pop(name)
                 self.logger.info(f"Removed connection to {name}")
 
+    def set_partners(self, partners: list[str]) -> None:
+        self.partners = partners
+
     @rpyc.exposed
     def get_status(self) -> str:
         self.logger.debug(f"get_status exposed method called; returning '{self.status}'")
@@ -319,13 +327,12 @@ class ObserverService(NodeService):
     ALIASES: list[str] = ["OBSERVER"]
 
     master_dict: MasterDict
-    delegator: BaseDelegator
 
-    def __init__(self, delegator: BaseDelegator):
-        super().__init__()
+    def __init__(self, partners: list[str]):
+        super().__init__(partners)
         self.logger = logging.getLogger("main_logger")
         self.master_dict = MasterDict()
-        self.prepare_delegator(delegator)
+        self.handshake(n_attempts=10, wait_increase_factor=1.25)
 
     def prepare_delegator(self, delegator: BaseDelegator):
         """
@@ -374,24 +381,24 @@ class ParticipantService(NodeService):
 
     executor: BaseExecutor
     model: WrappedModel
-    inbox: PriorityQueue[tasks.Task]
+    inbox: PriorityQueue[tasks.Task] = PriorityQueue()
 
     def __init__(self,
                  ModelCls: Type[nn.Module] | None,
                  RunnerCls: Type[BaseExecutor]
                  ):
         super().__init__()
-        self.prepare_model(ModelCls)
-        self.prepare_runner(RunnerCls)
+        self.ModelCls = ModelCls
+        self.RunnerCls = RunnerCls
 
-    def prepare_model(self, ModelCls):
+    def prepare_model(self):
         observer_svc = self.get_connection("OBSERVER")
         assert isinstance(observer_svc, ObserverService)
         master_dict = observer_svc.get_master_dict()
-        if not isinstance(ModelCls, nn.Module):
+        if not isinstance(self.ModelCls, nn.Module):
             self.model = WrappedModel(master_dict=master_dict)
         else:
-            self.model = WrappedModel(pretrained=ModelCls(), master_dict=master_dict)
+            self.model = WrappedModel(pretrained=self.ModelCls(), master_dict=master_dict)
 
     def prepare_runner(self, RunnerCls):
         self.runner = RunnerCls(self)
