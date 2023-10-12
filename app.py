@@ -24,12 +24,13 @@ from rich.box import SQUARE
 from rich.table import Table
 from getmac import get_mac_address
 from pathlib import Path
-from app_api import log_handling, utils
 
+from src.app_api import log_handling, utils
 from src.app_api.device_mgmt import DeviceMgr, SSHSession
 
 
 PROJECT_ROOT = utils.get_repo_root()
+CURRENT_VERSION = "0.3.0"
 
 
 logger = log_handling.setup_logging()
@@ -75,7 +76,7 @@ def device_ls(args):
     args: argparse.Namespace
         The arguments and options passed to the CLI.
     """
-    device_mgr = DeviceMgr(PROJECT_ROOT / "onodelib" / "AppData" / "Store" / "known_devices.yaml")
+    device_mgr = DeviceMgr()
     devices = device_mgr.get_devices()
     console = Console()
 
@@ -106,33 +107,6 @@ def device_ls(args):
 
     console.print(table)
 
-def device_update(args):
-    """
-    Updates the participant module files to the current version.
-    """
-    device_mgr = DeviceMgr(PROJECT_ROOT / "onodelib" / "AppData" / "Store" / "known_devices.yaml")
-    available_devices = device_mgr.get_devices(available_only=True)
-
-    def update(device):
-        tracr_dir = Path(f"/home/{device.get_current('user')}/tracr")
-        ssh = SSHSession(device)
-        ssh.mkdir(tracr_dir)
-        participant_library = PROJECT_ROOT / "pnodelib"
-        ssh.copy_over(
-            participant_library,
-            tracr_dir,
-            exclude=["build", "__pycache__", "pnodelib.egg-info"]
-        )
-        ssh.exec_command("python -m pip install ~/tracr/pnodelib")
-    
-    if args.all:
-        for device in available_devices:
-            update(device)
-
-    elif args.name:
-        for name in args.name:
-            pass
-            
 
 def device_add(args):
     if args.wizard:
@@ -211,8 +185,9 @@ def main():
         "-v",
         "--version",
         action="version",
-        version="0.0.0",
-    ),
+        version=CURRENT_VERSION,
+    )
+
     subparsers = parser.add_subparsers(title="SUBMODULES")
 
     # parser for "device"
@@ -223,23 +198,6 @@ def main():
     device_subparsers = parser_device.add_subparsers(title="DEVICE MODULE COMMANDS")
     parser_device_ls = device_subparsers.add_parser("ls", help="List devices")
     parser_device_ls.set_defaults(func=device_ls)
-
-    parser_device_update = device_subparsers.add_parser("update", help="Update participant module")
-    parser_device_update.add_argument(
-        "-a",
-        "--all",
-        action="store_true",
-        help="Update all available devices",
-        dest="all",
-    )
-    parser_device_update.add_argument(
-        "-n",
-        "--name",
-        nargs="+",
-        help="Update all available devices",
-        dest="all",
-    )
-    parser_device_update.set_defaults(func=device_update)
 
     parser_device_add = device_subparsers.add_parser(
         "add", help="add new devices and configure them for experiments"

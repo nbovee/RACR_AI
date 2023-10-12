@@ -20,7 +20,8 @@ class NodeService(rpyc.Service):
         super().__init__()
         self.status = "initializing"
         self.node_name = self.ALIASES[0].upper().strip()
-        self.logger = logging.getLogger(f"{self.node_name}_logger")
+        if self.node_name.upper().strip() != "OBSERVER":
+            self.logger = logging.getLogger(f"{self.node_name}_logger")
         self.active_connections = {}
 
     def get_connection(self, node_name: str) -> NodeService:
@@ -32,7 +33,7 @@ class NodeService(rpyc.Service):
         self.logger.debug(
             f"Connection to {node_name} not memoized; attempting to access via registry."
         )
-        conn = rpyc.connect_by_service(node_name)
+        conn = rpyc.connect_by_service(node_name, service=self)  # type: ignore
         self.active_connections[node_name] = conn.root
         self.logger.info(f"New connection to {node_name} established and memoized.")
         return self.active_connections[node_name]
@@ -61,4 +62,5 @@ class NodeService(rpyc.Service):
         self.logger.debug(f"get_node_name exposed method called; returning '{self.node_name}'")
         return self.node_name
 
-
+ns = NodeService()
+ns._connect()

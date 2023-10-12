@@ -7,7 +7,7 @@ import struct
 import pickle
 from rich.console import Console
 
-from app_api import utils
+from src.app_api import utils
 
 
 MAIN_LOG_FP = utils.get_repo_root() / "src" / "app_api" / "AppData" / "app.log"
