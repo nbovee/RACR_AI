@@ -79,8 +79,8 @@ else:
     Model = None
 
 logger.info(f"Importing {executor_class} from src.experiment_design.runners.{executor_module}.")
-m = import_module(f"src.experiment_design.runners.{model_module}")
-Model = getattr(m, model_class)
+m = import_module(f"src.experiment_design.runners.{executor_module}")
+Runner = getattr(m, executor_class)
 
 logger.info(f"Defining new class {node_name}Service(ParticipantService) to control formal name.")
 class $NODE_NAME$Service(ParticipantService):
