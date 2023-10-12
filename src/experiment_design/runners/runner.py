@@ -181,7 +181,7 @@ class BaseExecutor(BaseRunner):
         dataloader = DataLoader(dataset, batch_size=1)
 
         for input in dataloader:
-            subtask = tasks.SingleInputInferenceTask("SELF", input)
+            subtask = tasks.SingleInputInferenceTask(input, from_node="SELF")
             self.inference_sequence_per_input(subtask)
 
 
@@ -195,9 +195,19 @@ class BaseDelegator(BaseRunner):
     node: ObserverService
     playbook: dict[str, list[tasks.Task]]
 
-    def __init__(self, node: ObserverService):
-        super().__init__(node)
-        self.start()
+    def __init__(self):
+        return
+
+    def link_node(self, node: ObserverService):
+        self.node = node
+        self.active_connections = self.node.active_connections
+        self.status = self.node.status
+
+    def set_playbook(self, playbook: dict[str, list[tasks.Task]]):
+        self.playbook = playbook
+
+    def set_partners(self, partners: list[str]):
+        self.partners = partners
 
     def get_ready(self):
         self.handshake()
@@ -211,6 +221,7 @@ class BaseDelegator(BaseRunner):
             if all([(self.node.get_connection(p).get_status() == "ready") for p in self.partners]):
                 success = True
                 break
+            n_attempts -= 1
             sleep(1)
 
         if not success:

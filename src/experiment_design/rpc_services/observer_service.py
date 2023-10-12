@@ -1,7 +1,6 @@
 import rpyc
-import sys
+import logging
 from importlib import import_module
-from pathlib import Path
 
 from datasets.dataset import BaseDataset
 from experiment_design.runners.runner import BaseDelegator
@@ -16,15 +15,25 @@ class ObserverService(NodeService):
     """
 
     ALIASES: list[str] = ["OBSERVER"]
-    USR_DATASETS_PATH: Path = Path(__file__).parent.parent / "MyData" / "Datasets"
 
     master_dict: MasterDict
     delegator: BaseDelegator
 
-    def __init__(self):
+    def __init__(self, delegator: BaseDelegator):
         super().__init__()
+        self.logger = logging.getLogger("main_logger")
         self.master_dict = MasterDict()
-        sys.path.append(str(self.USR_DATASETS_PATH.absolute()))
+        self.prepare_delegator(delegator)
+
+    def prepare_delegator(self, delegator: BaseDelegator):
+        """
+        Makes sure the delegator is ready to officially start the experiment. Note that the 
+        delegator must already have a playbook and list of partners, set using `set_playbook` and
+        `set_partners`.
+        """
+        self.delegator = delegator
+        self.delegator.link_node(self)
+        self.delegator.get_ready()
 
     @rpyc.exposed
     def get_master_dict(self) -> MasterDict:
@@ -35,10 +44,15 @@ class ObserverService(NodeService):
         """
         Allows remote nodes to access datasets stored on the observer as if they were local objects.
         """
-        module = import_module(f"datasets.{dataset_module}")
+        module = import_module(f"src.experiment_design.datasets.{dataset_module}")
         dataset = getattr(module, dataset_instance)
         return dataset
 
     @rpyc.exposed
     def send_log(self):
         pass
+
+    @rpyc.exposed
+    def run(self):
+        assert self.status == "ready"
+        self.delegator.start()

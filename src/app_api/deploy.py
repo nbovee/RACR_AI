@@ -56,8 +56,12 @@ from $MODULE$ import $SERVER$ as ServerCls
 logger.info("Importing ParticipantService in remote script")
 from experiment_design.rpc_services.participant_service import ParticipantService
 
-logger.info("Importing $MOD-CLASS$ from experiment_design.models.$MOD-MODULE$.")
-from experiment_design.models.$MOD-MODULE$ import $MOD-CLASS$ as Model
+if "$MOD-CLASS$" and "$MOD-MODULE$":
+    logger.info("Importing $MOD-CLASS$ from experiment_design.models.$MOD-MODULE$.")
+    from experiment_design.models.$MOD-MODULE$ import $MOD-CLASS$ as Model
+else:
+    Model = None
+
 logger.info("Importing $SCH-CLASS$ from experiment_design.runners.$SCH-MODULE$.")
 from experiment_design.runners.$SCH-MODULE$ import $SCH-CLASS$ as Runner
 
@@ -95,7 +99,7 @@ class ZeroDeployedServer(DeployedServer):
                  node_name: str,
                  model: tuple[str, str],
                  runner: tuple[str, str],
-                 server_class="rpyc.utils.server.ThreadedServer",
+                 server_class="rpyc.utils.server.Server",
                  python_executable=None):
         assert device.working_cparams is not None
         self.proc = None
@@ -107,15 +111,12 @@ class ZeroDeployedServer(DeployedServer):
         self._tmpdir_ctx = self.remote_machine.tempdir()
         tmp = self._tmpdir_ctx.__enter__()
 
-        # Copy over the rpyc, participant_lib, and user_lib code
+        # Copy over the rpyc and experiment_design packages
         rpyc_root = local.path(rpyc.__file__).up()
         copy(rpyc_root, tmp / "rpyc")
 
-        participant_lib_root = local.path((Path(__file__).parent.parent / "participant_lib").absolute())
-        copy(participant_lib_root, tmp/ "participant_lib")
-
-        user_lib_root = local.path((Path(__file__).parent.parent / "user_lib").absolute())
-        copy(user_lib_root, tmp/ "user_lib")
+        experiment_design_root = local.path(utils.get_repo_root() / "src" / "experiment_design")
+        copy(experiment_design_root, tmp / "src" / "experiment_design")
 
         # Substitute placeholders in the remote script and send it over
         script = (tmp / "deployed-rpyc.py")

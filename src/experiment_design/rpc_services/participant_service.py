@@ -1,4 +1,5 @@
 import rpyc
+import torch.nn as nn
 from typing import Type
 from queue import PriorityQueue
 
@@ -26,7 +27,7 @@ class ParticipantService(NodeService):
     inbox: PriorityQueue[Task]
 
     def __init__(self,
-                 ModelCls: Type[WrappedModel],
+                 ModelCls: Type[nn.Module] | None,
                  RunnerCls: Type[BaseExecutor]
                  ):
         super().__init__()
@@ -37,7 +38,10 @@ class ParticipantService(NodeService):
         observer_svc = self.get_connection("OBSERVER")
         assert isinstance(observer_svc, ObserverService)
         master_dict = observer_svc.get_master_dict()
-        self.model = ModelCls(master_dict=master_dict)
+        if not isinstance(ModelCls, nn.Module):
+            self.model = WrappedModel(master_dict=master_dict)
+        else:
+            self.model = WrappedModel(pretrained=ModelCls(), master_dict=master_dict)
 
     def prepare_runner(self, RunnerCls):
         self.runner = RunnerCls(self)

@@ -82,9 +82,9 @@ class SingleInputInferenceTask(Task):
     inference_id: str | None = None
 
     def __init__(self,
-                 from_node: str,
                  input: Tensor | Image.Image,
-                 inference_id: str | None = None
+                 inference_id: str | None = None,
+                 from_node: str = "OBSERVER"
                  ):
         super().__init__(from_node)
         self.input = input
@@ -109,9 +109,9 @@ class InferOverDatasetTask(Task):
     dataset_instance: str 
 
     def __init__(self,
-                 from_node: str,
                  dataset_module: str,
-                 dataset_instance: str
+                 dataset_instance: str,
+                 from_node: str = "OBSERVER"
                  ):
         super().__init__(from_node)
         self.dataset_module = dataset_module
@@ -126,6 +126,6 @@ class FinishSignalTask(Task):
 
     priority: int = 11
 
-    def __init__(self, from_node: str):
+    def __init__(self, from_node: str = "OBSERVER"):
         super().__init__(from_node)
 

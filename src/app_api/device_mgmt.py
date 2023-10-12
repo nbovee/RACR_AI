@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from typing import Self
 
+from src.app_api import utils
+
 
 class SSHAuthenticationException(Exception):
     """
@@ -237,7 +239,7 @@ class DeviceMgr:
     instances to/from the persistent datafile.
     """
 
-    DATAFILE_PATH: pathlib.Path = pathlib.Path(__file__).parent / "AppData" / "known_devices.yaml"
+    DATAFILE_PATH: pathlib.Path = utils.get_repo_root() / "src" / "app_api" / "AppData" / "known_devices.yaml"
 
     devices: list[Device]
     datafile_path: pathlib.Path
