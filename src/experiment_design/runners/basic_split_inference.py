@@ -9,9 +9,8 @@ We also define a subclass of BaseDelegator to run the observer node.
 
 import uuid
 from experiment_design.partitioners.partitioner import Partitioner
-from experiment_design.rpc_services.participant_service import ParticipantService
+from experiment_design.node_behavior.base import ParticipantService, BaseDelegator, BaseExecutor
 import experiment_design.tasks.tasks as tasks
-from runner import BaseDelegator, BaseExecutor
 
 
 class ClientExecutor(BaseExecutor):

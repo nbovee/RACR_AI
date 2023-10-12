@@ -25,13 +25,12 @@ class ColorByDeviceFormatter(logging.Formatter):
     ]
 
     device_color_map: dict[str, str] = {"MAIN": "white"}
-    console: Console = Console()
 
     def format(self, record):
         log_message = super().format(record)
         device = record.name.split('_')[0].upper()
         color = self.get_color(device)
-        message = self.console.render(f"[{color}]{log_message}[/]")
+        message = f"[{color}]{log_message}[/]"
         return message
 
     def get_color(self, device: str) -> str:
@@ -59,14 +58,17 @@ class LogRecordStreamHandler(socketserver.StreamRequestHandler):
 
 
 class ConsoleHandler(logging.StreamHandler):
+
+    console: Console = Console()
+
     def emit(self, record):
         log_message = self.format(record)
         device = record.name.split("_")[0].upper()
 
         if device == "MAIN":
-            print(f"OBSERVER@localhost: {log_message}")
+            self.console.print(f"OBSERVER@localhost: {log_message}")
         else:
-            print(log_message)
+            self.console.print(log_message)
 
 
 def setup_logging(verbosity: int = 3):

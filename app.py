@@ -27,6 +27,7 @@ from pathlib import Path
 
 from src.app_api import log_handling, utils
 from src.app_api.device_mgmt import DeviceMgr, SSHSession
+from src.app_api.experiment_mgmt import Experiment, ExperimentManifest
 
 
 PROJECT_ROOT = utils.get_repo_root()
@@ -148,7 +149,15 @@ def experiment_run(args):
     """
     Runs an experiment.
     """
-    pass
+    exp_name = args.name
+    testcase_dir = PROJECT_ROOT / "MyData" / "TestCases"
+    manifest_yaml_fp = next(testcase_dir.glob(f"**/*{exp_name}.yaml"))
+    manifest = ExperimentManifest(manifest_yaml_fp)
+
+    device_manager = DeviceMgr()
+    available_devices = device_manager.get_devices(available_only=True)
+    experiment = Experiment(manifest, available_devices)
+    experiment.run()
 
 def network(args):
     if args.d:
