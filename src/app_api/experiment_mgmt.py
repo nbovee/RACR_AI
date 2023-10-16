@@ -12,7 +12,7 @@ from rpyc.utils.registry import UDPRegistryServer
 from socketserver import TCPServer
 
 from src.app_api.deploy import ZeroDeployedServer
-from src.experiment_design.node_behavior.base import ObserverService, BaseDelegator
+from src.experiment_design.node_behavior.base import ObserverService
 
 import src.experiment_design.tasks.tasks as tasks
 import src.app_api.utils as utils
@@ -105,9 +105,9 @@ class ExperimentManifest:
                     model = tuple([model_specs["module"], model_specs["class"]])
                     if "default" in model:
                         model = tuple(["", ""])
-                    runner_specs = self.participant_types[instance["node_type"]]["executor"]
-                    runner = tuple([runner_specs["module"], runner_specs["class"]])
-                    param_tuple = tuple([d, node_name, model, runner])
+                    service_specs = self.participant_types[instance["node_type"]]["service"]
+                    service = tuple([service_specs["module"], service_specs["class"]])
+                    param_tuple = tuple([d, node_name, model, service])
                     result.append(param_tuple)
                     available_devices.remove(d)
                     break
@@ -131,25 +131,31 @@ class Experiment:
     observer_node: ThreadedServer
     observer_conn: ObserverService
     participant_nodes: list[ZeroDeployedServer] = []
+    threads: dict[str, threading.Thread]
+    events: dict[str, threading.Event]
 
     def __init__(self, manifest: ExperimentManifest, available_devices: list[dm.Device]):
         self.available_devices = available_devices
         self.manifest = manifest
+        self.threads = {
+            "registry_svr": threading.Thread(target=self.start_registry, daemon=True),
+            "remote_log_svr": threading.Thread(target=self.start_remote_log_server, daemon=True),
+            "observer_svr": threading.Thread(target=self.start_observer_node, daemon=True),
+            "participant_svrs": threading.Thread(target=self.start_participant_nodes, daemon=True),
+        }
+        self.events = {
+            "registry_ready": threading.Event(),
+            "remote_log_ready": threading.Event(),
+            "all_nodes_finished": threading.Event()
+        }
 
     def run(self) -> None:
         """
         Runs the experiment according to the current attributes set. Experiments can be modified
         from their original state by changing self.manifest before calling this method.
         """
-        server_threads = [
-            threading.Thread(target=self.start_registry),
-            threading.Thread(target=self.start_remote_log_server),
-            threading.Thread(target=self.start_observer_node),
-            threading.Thread(target=self.start_participant_nodes),
-        ]
-        for t in server_threads:
-            t.daemon = True
-            t.start()
+
+        # START THE SERVERS from self.threads HERE
 
         self.wait_for_ready()
         self.send_start_signal_to_observer()
@@ -158,19 +164,18 @@ class Experiment:
     def start_registry(self) -> None:
         atexit.register(self.registry_server.close)
         self.registry_server.start()
+        self.events["registry_ready"].set()
 
     def start_remote_log_server(self) -> None:
         atexit.register(self.remote_log_server.shutdown)
         self.remote_log_server.serve_forever()
+        self.events["remote_log_ready"].set()
 
     def start_observer_node(self) -> None:
-        delegator = BaseDelegator()
-        node_names = self.manifest.get_participant_instance_names()
+        all_node_names = self.manifest.get_participant_instance_names()
         playbook = self.manifest.playbook
-        delegator.set_partners(node_names)
-        delegator.set_playbook(playbook)
 
-        observer_service = ObserverService(delegator)
+        observer_service = ObserverService(all_node_names, playbook)
         self.observer_node = ThreadedServer(observer_service, auto_register=True)
 
         atexit.register(self.observer_node.close)

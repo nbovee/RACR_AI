@@ -25,8 +25,8 @@ server_module     = "$SVR-MODULE$"
 server_class      = "$SVR-CLASS$"
 model_class       = "$MOD-CLASS$"
 model_module      = "$MOD-MODULE$"
-executor_module   = "$EXR-MODULE$"
-executor_class    = "$EXR-CLASS$"
+ps_module         = "$PS-MODULE$"
+ps_class          = "$PS-CLASS$"
 node_name         = "$NODE-NAME$"
 participant_host  = "$PRT-HOST$"
 observer_ip       = "$OBS-IP$"
@@ -34,6 +34,7 @@ observer_ip       = "$OBS-IP$"
 
 def setup_remote_logger(node_name, host, observer_ip):
     logger = logging.getLogger(f"{node_name}_logger")
+    logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter(f"{node_name}@{host}: %(message)s")
 
     socket_handler = logging.handlers.SocketHandler(observer_ip, 9000)
@@ -43,7 +44,6 @@ def setup_remote_logger(node_name, host, observer_ip):
     return logger
 
 logger = setup_remote_logger(node_name, participant_host, observer_ip)
-
 logger.info("Zero deploy sequence started. Removing __pycache__ and *.pyc files from tempdir.")
 
 here = os.path.dirname(__file__)
@@ -67,9 +67,6 @@ logger.info(f"Importing {server_class} from {server_module} as ServerCls'")
 m = import_module(server_module)
 ServerCls = getattr(m, server_class)
 
-logger.info("Importing ParticipantService from src.experiment_design.node_behavior.base.")
-from src.experiment_design.node_behavior.base import ParticipantService
-
 if model_class and model_module:
     logger.info(f"Importing {model_class} from src.experiment_design.models.{model_module}.")
     m = import_module(f"src.experiment_design.models.{model_module}")
@@ -78,16 +75,12 @@ else:
     logger.info("Using default model (AlexNet)")
     Model = None
 
-logger.info(f"Importing {executor_class} from src.experiment_design.runners.{executor_module}.")
-m = import_module(f"src.experiment_design.runners.{executor_module}")
-Runner = getattr(m, executor_class)
-
-logger.info(f"Defining new class {node_name}Service(ParticipantService) to control formal name.")
-class $NODE_NAME$Service(ParticipantService):
-    ALIASES = [node_name, "PARTICIPANT"]
+logger.info(f"Importing {ps_class} from src.experiment_design.node_behavior.{ps_module}.")
+m = import_module(f"src.experiment_design.node_behavior.{ps_module}")
+CustomParticipantService = getattr(m, ps_class)
 
 logger.info("Constructing participant_service instance.")
-participant_service = $NODE_NAME$Service(Model, Runner)
+participant_service = CustomParticipantService(Model)
 
 logger.info("Starting RPC server in thread.")
 server = ServerCls(participant_service, port=18861, reuse_addr=True, logger=logger, auto_register=True)
@@ -117,7 +110,7 @@ class ZeroDeployedServer(DeployedServer):
                  device: dm.Device,
                  node_name: str,
                  model: tuple[str, str],
-                 executor: tuple[str, str],
+                 participant_service: tuple[str, str],
                  server_class="rpyc.utils.server.Server",
                  python_executable=None):
         assert device.working_cparams is not None
@@ -141,7 +134,7 @@ class ZeroDeployedServer(DeployedServer):
         script = (tmp / "deployed-rpyc.py")
         modname, clsname = server_class.rsplit(".", 1)
         m_module, m_class = model
-        exr_module, exr_class = executor
+        ps_module, ps_class = participant_service
         observer_ip = utils.get_local_ip()
         participant_host = device.working_cparams.host
         script.write(
@@ -154,9 +147,9 @@ class ZeroDeployedServer(DeployedServer):
             ).replace(
                 "$MOD-CLASS$", m_class
             ).replace(
-                "$EXR-MODULE$", exr_module
+                "$PS-MODULE$", ps_module
             ).replace(
-                "$EXR-CLASS$", exr_class
+                "$PS-CLASS$", ps_class
             ).replace(
                 "$NODE-NAME$", node_name
             ).replace(
@@ -165,7 +158,6 @@ class ZeroDeployedServer(DeployedServer):
                 "$PRT-HOST$", participant_host
             )
         )
-
         if isinstance(python_executable, BoundCommand):
             cmd = python_executable
         elif python_executable:

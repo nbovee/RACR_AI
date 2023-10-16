@@ -55,6 +55,34 @@ class NodeService(rpyc.Service):
         self.node_name = self.ALIASES[0].upper().strip()
         self.active_connections = {}
 
+    def on_connect(self, conn: Connection):
+        if isinstance(conn.root, NodeService):
+            self.logger.info(
+                f"on_connect method called; memoizing connection to {conn.root.get_node_name()}"
+            )
+            self.active_connections[conn.root.get_node_name()] = conn.root
+
+    def on_disconnect(self, conn: Connection):
+        self.logger.info("on_disconnect method called; removing saved connection.")
+        for name in self.active_connections:
+            if self.active_connections[name] == conn:
+                self.active_connections.pop(name)
+                self.logger.info(f"Removed connection to {name}")
+
+    def get_connection(self, node_name: str) -> NodeService:
+        node_name = node_name.upper().strip()
+        self.logger.debug(f"Attempting to get connection to {node_name}.")
+        if node_name in self.active_connections:
+            self.logger.debug(f"Connection to {node_name} already memoized.")
+            return self.active_connections[node_name]
+        self.logger.debug(
+            f"Connection to {node_name} not memoized; attempting to access via registry."
+        )
+        conn = rpyc.connect_by_service(node_name, service=self)  # type: ignore
+        self.active_connections[node_name] = conn.root
+        self.logger.info(f"New connection to {node_name} established and memoized.")
+        return self.active_connections[node_name]
+
     @rpyc.exposed
     def handshake(self, n_attempts: int = 10, wait_increase_factor: int | float = 1):
         partners = self.partners.copy()
@@ -77,37 +105,6 @@ class NodeService(rpyc.Service):
 
         if not success:
             raise HandshakeFailureException(f"Node {self.node_name} failed to handshake with {partners}")
-
-    def get_connection(self, node_name: str) -> NodeService:
-        node_name = node_name.upper().strip()
-        self.logger.debug(f"Attempting to get connection to {node_name}.")
-        if node_name in self.active_connections:
-            self.logger.debug(f"Connection to {node_name} already memoized.")
-            return self.active_connections[node_name]
-        self.logger.debug(
-            f"Connection to {node_name} not memoized; attempting to access via registry."
-        )
-        conn = rpyc.connect_by_service(node_name, service=self)  # type: ignore
-        self.active_connections[node_name] = conn.root
-        self.logger.info(f"New connection to {node_name} established and memoized.")
-        return self.active_connections[node_name]
-
-    def on_connect(self, conn: Connection):
-        if isinstance(conn.root, NodeService):
-            self.logger.info(
-                f"on_connect method called; memoizing connection to {conn.root.get_node_name()}"
-            )
-            self.active_connections[conn.root.get_node_name()] = conn.root
-
-    def on_disconnect(self, conn: Connection):
-        self.logger.info("on_disconnect method called; removing saved connection.")
-        for name in self.active_connections:
-            if self.active_connections[name] == conn:
-                self.active_connections.pop(name)
-                self.logger.info(f"Removed connection to {name}")
-
-    def set_partners(self, partners: list[str]) -> None:
-        self.partners = partners
 
     @rpyc.exposed
     def get_status(self) -> str:
