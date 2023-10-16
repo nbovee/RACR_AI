@@ -54,6 +54,7 @@ class LogRecordStreamHandler(socketserver.StreamRequestHandler):
             length = struct.unpack(">L", chunk)[0]
             chunk = self.connection.recv(length)
             record = logging.makeLogRecord(pickle.loads(chunk))
+            print(f"received stream request from {record.name}")
             logger.handle(record)
 
 

@@ -9,11 +9,11 @@ We also define a subclass of BaseDelegator to run the observer node.
 
 import uuid
 from src.experiment_design.partitioners.partitioner import Partitioner
-from src.experiment_design.node_behavior.base import ParticipantService, BaseDelegator, BaseExecutor
+from src.experiment_design.node_behavior.base import ParticipantService
 import src.experiment_design.tasks.tasks as tasks
 
 
-class ClientExecutor(BaseExecutor):
+class ClientService(ParticipantService):
     """
     To define the way our client behaves, there are only three parts of the BaseExecutor class we
     have to overwrite:
@@ -33,6 +33,7 @@ class ClientExecutor(BaseExecutor):
     """
 
     DOWNSTREAM_PARTNER = "EDGE"
+    ALIASES: list[str] = ["CLIENT", "PARTICIPANT"]
 
     partners: list[str] = ["OBSERVER", "EDGE"]
 
@@ -48,48 +49,30 @@ class ClientExecutor(BaseExecutor):
             current_split_layer = partitioner()
             start, end = 0, current_split_layer
             out = self.model.forward(
-                input, inference_id, start=start, end=end, by_node=self.node.node_name
+                input, inference_id, start=start, end=end, by_node=self.node_name
             )
             downstream_task = tasks.SimpleInferenceTask(
-                self.node.node_name, out, inference_id, start_layer=end+1
+                self.node_name, out, inference_id, start_layer=end+1
             )
-            downstream_partner = self.node.get_connection(self.DOWNSTREAM_PARTNER)
+            downstream_partner = self.get_connection(self.DOWNSTREAM_PARTNER)
             assert isinstance(downstream_partner, ParticipantService)
             downstream_partner.give_task(downstream_task)
 
     def on_finish(self):
-        downstream_finish_signal = tasks.FinishSignalTask(self.node.node_name)
-        downstream_partner = self.node.get_connection(self.DOWNSTREAM_PARTNER)
+        downstream_finish_signal = tasks.FinishSignalTask(self.node_name)
+        downstream_partner = self.get_connection(self.DOWNSTREAM_PARTNER)
         assert isinstance(downstream_partner, ParticipantService)
         downstream_partner.give_task(downstream_finish_signal)
 
 
-class EdgeExecutor(BaseExecutor):
+class EdgeService(ParticipantService):
     """
     Defining our edge node's behavior is much simpler because it only has to respond to instances
-    of the `SimpleInferenceTask` class, which is already defined in the BaseExecutor class. The 
-    edge node has no "decisions" to make; the client gives it all the parameters necessary to 
+    of the `SimpleInferenceTask` class, which is already defined in the ParticipantService class.
+    The edge node has no "decisions" to make; the client gives it all the parameters necessary to 
     perform its inference. All we need to do is overwrite the list of partners it will handshake
     with during setup.
     """
+    ALIASES: list[str] = ["EDGE", "PARTICIPANT"]
     partners: list[str] = ["OBSERVER", "CLIENT"]
 
-
-class ClientEdgeDelegator(BaseDelegator):
-    """
-    For the observer node, we just need to overwrite two things:
-        1.) The `partners` class attribute tells the observer which participant nodes to wait for 
-        2.) The `playbook` class attribute tells it which tasks should be assigned to each
-            participant before starting the experiment
-    """
-    partners: list[str] = ["CLIENT", "EDGE"]
-    playbook: dict[str, list[tasks.Task]] = {
-        # The playbook has no entry for EDGE since it gets its tasks from CLIENT in this test case
-        "CLIENT": [
-            # First, CLIENT runs its inference_sequence_per_input method on each dataset instance
-            tasks.InferOverDatasetTask("OBSERVER", "imagenet", "imagenet10_rgb"),
-            # Then it receives the finish signal, which prompts it to send a finish signal to 
-            # EDGE as well, before stopping itself
-            tasks.FinishSignalTask("OBSERVER")
-        ]
-    }

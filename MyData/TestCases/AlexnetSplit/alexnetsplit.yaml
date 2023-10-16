@@ -2,18 +2,18 @@
 participant_types:
   # top-level keys are used for "node_type" down below
   client:
-    # each participant type is defined by their executor and model
-    executor:
+    # each participant type is defined by their service and model
+    service:
       module: basic_split_inference
-      class: ClientExecutor
+      class: ClientService
     # "default" tells WrappedModel just to use AlexNet
     model:
       module: default
       class: default
   edge:
-    executor:
+    service:
       module: basic_split_inference
-      class: EdgeExecutor
+      class: EdgeService
     model:
       module: default
       class: default
