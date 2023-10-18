@@ -107,6 +107,11 @@ class NodeService(rpyc.Service):
             raise HandshakeFailureException(f"Node {self.node_name} failed to handshake with {partners}")
 
     @rpyc.exposed
+    def get_ready(self):
+        self.handshake()
+        self.status = "ready"
+
+    @rpyc.exposed
     def get_status(self) -> str:
         self.logger.debug(f"get_status exposed method called; returning '{self.status}'")
         return self.status
@@ -139,8 +144,13 @@ class ObserverService(NodeService):
         self.playbook = playbook
 
     @rpyc.exposed
-    def await_participants(self, n_attempts: int = 10):
+    def get_ready(self):
+        for partner in self.partners:
+            node = self.get_connection(partner)
+            node.get_ready()
+
         success = False
+        n_attempts = 10
         while n_attempts > 0:
             if all([(self.get_connection(p).get_status() == "ready") for p in self.partners]):
                 success = True
@@ -247,6 +257,7 @@ class ParticipantService(NodeService):
     @rpyc.exposed
     def get_ready(self):
         self.handshake()
+        self.prepare_model()
         self.status = "ready"
 
     def process(self, task: tasks.Task):
