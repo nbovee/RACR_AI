@@ -1,14 +1,20 @@
+from time import sleep
 import rpyc
+import logging
 import sys
-from pathlib import Path
+import subprocess
 from rpyc.utils.zerodeploy import DeployedServer
 from rpyc.core.stream import SocketStream
-from plumbum import local, CommandNotFound, SshMachine
+from plumbum.machines.remote import RemoteCommand
+from plumbum import local, CommandNotFound
 from plumbum.path import copy
 from plumbum.commands.base import BoundCommand
 
 import src.app_api.device_mgmt as dm
 import src.app_api.utils as utils
+
+
+logger = logging.getLogger("main_logger")
 
 
 SERVER_SCRIPT = r"""\
@@ -19,6 +25,7 @@ import shutil
 import logging
 import logging.handlers
 from importlib import import_module
+from threading import Event
 
 
 server_module     = "$SVR-MODULE$"
@@ -30,6 +37,7 @@ ps_class          = "$PS-CLASS$"
 node_name         = "$NODE-NAME$"
 participant_host  = "$PRT-HOST$"
 observer_ip       = "$OBS-IP$"
+max_uptime        = $MAX-UPTIME$
 
 
 def setup_remote_logger(node_name, host, observer_ip):
@@ -44,7 +52,7 @@ def setup_remote_logger(node_name, host, observer_ip):
     return logger
 
 logger = setup_remote_logger(node_name, participant_host, observer_ip)
-logger.info("Zero deploy sequence started. Removing __pycache__ and *.pyc files from tempdir.")
+print("Zero deploy sequence started. Removing __pycache__ and *.pyc files from tempdir.")
 
 here = os.path.dirname(__file__)
 os.chdir(here)
@@ -63,35 +71,38 @@ except Exception:
 
 sys.path.insert(0, here)
 
-logger.info(f"Importing {server_class} from {server_module} as ServerCls'")
+print(f"Importing {server_class} from {server_module} as ServerCls'")
 m = import_module(server_module)
 ServerCls = getattr(m, server_class)
 
 if model_class and model_module:
-    logger.info(f"Importing {model_class} from src.experiment_design.models.{model_module}.")
+    print(f"Importing {model_class} from src.experiment_design.models.{model_module}.")
     m = import_module(f"src.experiment_design.models.{model_module}")
     Model = getattr(m, model_class)
 else:
-    logger.info("Using default model (AlexNet)")
+    print("Using default model (AlexNet)")
     Model = None
 
-logger.info(f"Importing {ps_class} from src.experiment_design.node_behavior.{ps_module}.")
+print(f"Importing {ps_class} from src.experiment_design.node_behavior.{ps_module}.")
 m = import_module(f"src.experiment_design.node_behavior.{ps_module}")
 CustomParticipantService = getattr(m, ps_class)
 
-logger.info("Constructing participant_service instance.")
+print("Constructing participant_service instance.")
 participant_service = CustomParticipantService(Model)
 
-logger.info("Starting RPC server in thread.")
+done_event = Event()
+participant_service.set_done_event(done_event)
+
+print("Starting RPC server in thread.")
 server = ServerCls(participant_service, port=18861, reuse_addr=True, logger=logger, auto_register=True)
 
 def close_server_atexit():
-    logger.info("Closing server due to atexit invocation.")
+    print("Closing server due to atexit invocation.")
     server.close()
     server_thread.join(2)
 
 def close_server_finally():
-    logger.info("Closing server after 'finally' clause was reached in SERVER_SCRIPT.")
+    print("Closing server after 'finally' clause was reached in SERVER_SCRIPT.")
     server.close()
     server_thread.join(2)
 
@@ -99,7 +110,7 @@ atexit.register(close_server_atexit)
 server_thread = server._start_in_thread()
 
 try:
-    sys.stdin.read()
+    done_event.wait(timeout=max_uptime)
 finally:
     close_server_finally()
 """
@@ -111,8 +122,14 @@ class ZeroDeployedServer(DeployedServer):
                  node_name: str,
                  model: tuple[str, str],
                  participant_service: tuple[str, str],
-                 server_class="rpyc.utils.server.Server",
-                 python_executable=None):
+                 server_class="rpyc.utils.server.ThreadedServer",
+                 python_executable=None,
+                 timeout_s: int | float = 3600):
+        logger.debug(
+            f"Constructing ZeroDeployedServer with params: device={device}, node_name={node_name}, " +
+            f"model={model}, participant_service={participant_service}, server_class={server_class}, " +
+            f"python_executable={python_executable}"
+        )
         assert device.working_cparams is not None
         self.proc = None
         self.tun = None
@@ -156,6 +173,8 @@ class ZeroDeployedServer(DeployedServer):
                 "$OBS-IP$", observer_ip
             ).replace(
                 "$PRT-HOST$", participant_host
+            ).replace(
+                "$MAX-UPTIME$", str(timeout_s)
             )
         )
         if isinstance(python_executable, BoundCommand):
@@ -176,7 +195,15 @@ class ZeroDeployedServer(DeployedServer):
             if not cmd:
                 cmd = self.remote_machine.python
 
-        self.proc = cmd.popen(script, new_session=True)
+        assert isinstance(cmd, RemoteCommand)
+        self.proc = cmd.popen(script, new_session=True, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+        while True:
+            try:
+                out, err = self.proc.communicate(timeout=10)
+                print(f"out: {out}\nerr: {err}")
+                sleep(5)
+            except subprocess.TimeoutExpired:
+                continue
 
     def _connect_sock(self):
         return SocketStream._connect(self.remote_machine.host, 18861)

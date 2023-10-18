@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import logging
+import threading
 import uuid
 import rpyc
 import torch.nn as nn
@@ -217,6 +218,7 @@ class ParticipantService(NodeService):
     model: WrappedModel
     inbox: PriorityQueue[tasks.Task] = PriorityQueue()
     task_map: dict[type, Callable]
+    done_event: threading.Event | None
 
     def __init__(self,
                  ModelCls: Type[nn.Module] | None,
@@ -259,6 +261,22 @@ class ParticipantService(NodeService):
         self.handshake()
         self.prepare_model()
         self.status = "ready"
+
+    @rpyc.exposed
+    def self_destruct(self):
+        """
+        Sets a threading.Event object to let the zerodeploy remote script know it's time to 
+        close the server and remove the tempdir from the remote machine's filesystem.
+        """
+        assert self.done_event is not None
+        self.done_event.set()
+
+    def set_done_event(self, done_event: threading.Event):
+        """
+        Once the participant service has been deployed on the remote machine, it is given an 
+        Event object to set once it's ready to self-destruct.
+        """
+        self.done_event = done_event
 
     def process(self, task: tasks.Task):
         task_class = type(task)
@@ -307,3 +325,4 @@ class ParticipantService(NodeService):
         for input in dataloader:
             subtask = tasks.SingleInputInferenceTask(input, from_node="SELF")
             self.inference_sequence_per_input(subtask)
+

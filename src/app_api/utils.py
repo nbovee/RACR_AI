@@ -5,6 +5,9 @@ from rpyc.core import brine
 from rpyc.utils.registry import REGISTRY_PORT, MAX_DGRAM_SIZE
 
 
+REMOTE_LOG_SVR_PORT = 9000
+
+
 def get_repo_root() -> Path:
     """
     Returns a pathlib.Path object representing the root directory of this repo.
@@ -37,4 +40,12 @@ def registry_server_is_up():
         except (socket.error, socket.timeout):
             return False
         return True
+
+def log_server_is_up(port=REMOTE_LOG_SVR_PORT, timeout=1):
+    try:
+        with socket.create_connection(("localhost", port), timeout=timeout) as _:
+            return True
+    except (socket.error, socket.timeout, ConnectionRefusedError):
+        return False
+
 

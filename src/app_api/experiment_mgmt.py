@@ -156,18 +156,19 @@ class Experiment:
         """
         self.threads["registry_svr"].start()
         self.threads["remote_log_svr"].start()
-
+        self.check_registry_server()
+        self.check_remote_log_server()
         self.events["registry_ready"].wait()
         self.events["remote_log_ready"].wait()
 
         self.threads["observer_svr"].start()
+        self.check_observer_node()
         self.events["observer_up"].wait()
 
         self.threads["participant_svrs"].start()
-
         self.verify_all_nodes_up()
-        self.start_handshake()
 
+        self.start_handshake()
         self.wait_for_ready()
         self.send_start_signal_to_observer()
         self.cleanup_after_finished()
@@ -188,8 +189,12 @@ class Experiment:
         self.remote_log_server.serve_forever()
         self.events["remote_log_ready"].set()
 
-    def check_remote_log_server(self) - None:
-
+    def check_remote_log_server(self) -> None:
+        for _ in range(5):
+            if utils.log_server_is_up():
+                self.events["remote_log_ready"].set()
+                return
+        raise TimeoutError(f"Remote log server took too long to become available")
 
     def start_observer_node(self) -> None:
         all_node_names = self.manifest.get_participant_instance_names()
@@ -201,6 +206,15 @@ class Experiment:
         atexit.register(self.observer_node.close)
         self.observer_node.start()
         self.events["observer_up"].set()
+
+    def check_observer_node(self) -> None:
+        for _ in range(5):
+            services = rpyc.list_services()
+            assert isinstance(services, tuple)
+            if "OBSERVER" in services:
+                self.events["observer_up"].set()
+                return
+        raise TimeoutError(f"Observer took too long to become available")
 
     def start_participant_nodes(self) -> None:
         zdeploy_node_param_list = self.manifest.get_zdeploy_params(self.available_devices)
