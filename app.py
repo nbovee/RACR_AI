@@ -9,24 +9,15 @@ you to run the CLI from anywhere, and without preceding the command with
 the word "python".
 """
 
-import argparse
-import json
-import socket
-import os
-import shutil
-import sys
 import logging
-from rich.logging import RichHandler
-from rich.panel import Panel
-from rich.columns import Columns
+logger = logging.getLogger("main_logger")
+
+import argparse
 from rich.console import Console
-from rich.box import SQUARE
 from rich.table import Table
-from getmac import get_mac_address
-from pathlib import Path
 
 from src.app_api import log_handling, utils
-from src.app_api.device_mgmt import DeviceMgr, SSHSession
+from src.app_api.device_mgmt import DeviceMgr
 from src.app_api.experiment_mgmt import Experiment, ExperimentManifest
 
 

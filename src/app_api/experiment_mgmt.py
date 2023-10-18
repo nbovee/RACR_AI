@@ -141,7 +141,6 @@ class Experiment:
             "registry_svr": threading.Thread(target=self.start_registry, daemon=True),
             "remote_log_svr": threading.Thread(target=self.start_remote_log_server, daemon=True),
             "observer_svr": threading.Thread(target=self.start_observer_node, daemon=True),
-            "participant_svrs": threading.Thread(target=self.start_participant_nodes, daemon=True),
         }
         self.events = {
             "registry_ready": threading.Event(),
@@ -165,9 +164,8 @@ class Experiment:
         self.check_observer_node()
         self.events["observer_up"].wait()
 
-        self.threads["participant_svrs"].start()
+        self.start_participant_nodes()
         self.verify_all_nodes_up()
-
         self.start_handshake()
         self.wait_for_ready()
         self.send_start_signal_to_observer()

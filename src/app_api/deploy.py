@@ -1,3 +1,4 @@
+from io import BufferedReader
 from time import sleep
 import rpyc
 import logging
@@ -52,7 +53,7 @@ def setup_remote_logger(node_name, host, observer_ip):
     return logger
 
 logger = setup_remote_logger(node_name, participant_host, observer_ip)
-print("Zero deploy sequence started. Removing __pycache__ and *.pyc files from tempdir.")
+logger.info("Zero deploy sequence started. Removing __pycache__ and *.pyc files from tempdir.")
 
 here = os.path.dirname(__file__)
 os.chdir(here)
@@ -71,38 +72,38 @@ except Exception:
 
 sys.path.insert(0, here)
 
-print(f"Importing {server_class} from {server_module} as ServerCls'")
+logger.info(f"Importing {server_class} from {server_module} as ServerCls'")
 m = import_module(server_module)
 ServerCls = getattr(m, server_class)
 
 if model_class and model_module:
-    print(f"Importing {model_class} from src.experiment_design.models.{model_module}.")
+    logger.info(f"Importing {model_class} from src.experiment_design.models.{model_module}.")
     m = import_module(f"src.experiment_design.models.{model_module}")
     Model = getattr(m, model_class)
 else:
-    print("Using default model (AlexNet)")
+    logger.info("Using default model (AlexNet)")
     Model = None
 
-print(f"Importing {ps_class} from src.experiment_design.node_behavior.{ps_module}.")
+logger.info(f"Importing {ps_class} from src.experiment_design.node_behavior.{ps_module}.")
 m = import_module(f"src.experiment_design.node_behavior.{ps_module}")
 CustomParticipantService = getattr(m, ps_class)
 
-print("Constructing participant_service instance.")
+logger.info("Constructing participant_service instance.")
 participant_service = CustomParticipantService(Model)
 
 done_event = Event()
 participant_service.set_done_event(done_event)
 
-print("Starting RPC server in thread.")
+logger.info("Starting RPC server in thread.")
 server = ServerCls(participant_service, port=18861, reuse_addr=True, logger=logger, auto_register=True)
 
 def close_server_atexit():
-    print("Closing server due to atexit invocation.")
+    logger.info("Closing server due to atexit invocation.")
     server.close()
     server_thread.join(2)
 
 def close_server_finally():
-    print("Closing server after 'finally' clause was reached in SERVER_SCRIPT.")
+    logger.info("Closing server after 'finally' clause was reached in SERVER_SCRIPT.")
     server.close()
     server_thread.join(2)
 
@@ -117,6 +118,9 @@ finally:
 
 class ZeroDeployedServer(DeployedServer):
 
+    stdout: BufferedReader
+    stderr: BufferedReader
+
     def __init__(self,
                  device: dm.Device,
                  node_name: str,
@@ -124,7 +128,7 @@ class ZeroDeployedServer(DeployedServer):
                  participant_service: tuple[str, str],
                  server_class="rpyc.utils.server.ThreadedServer",
                  python_executable=None,
-                 timeout_s: int | float = 3600):
+                 timeout_s: int | float = 30):
         logger.debug(
             f"Constructing ZeroDeployedServer with params: device={device}, node_name={node_name}, " +
             f"model={model}, participant_service={participant_service}, server_class={server_class}, " +
@@ -132,7 +136,6 @@ class ZeroDeployedServer(DeployedServer):
         )
         assert device.working_cparams is not None
         self.proc = None
-        self.tun = None
         self.remote_machine = device.as_pb_sshmachine()
         self._tmpdir_ctx = None
 
@@ -153,6 +156,7 @@ class ZeroDeployedServer(DeployedServer):
         m_module, m_class = model
         ps_module, ps_class = participant_service
         observer_ip = utils.get_local_ip()
+        logger.info(utils.get_local_ip())
         participant_host = device.working_cparams.host
         script.write(
             SERVER_SCRIPT.replace(    # type: ignore
@@ -196,14 +200,9 @@ class ZeroDeployedServer(DeployedServer):
                 cmd = self.remote_machine.python
 
         assert isinstance(cmd, RemoteCommand)
-        self.proc = cmd.popen(script, new_session=True, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-        while True:
-            try:
-                out, err = self.proc.communicate(timeout=10)
-                print(f"out: {out}\nerr: {err}")
-                sleep(5)
-            except subprocess.TimeoutExpired:
-                continue
+        self.proc = cmd.popen(script, new_session=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.stdout, self.stderr = self.proc.stdout, self.proc.stdout
+        print(type(self.stdout), type(self.stderr))
 
     def _connect_sock(self):
         return SocketStream._connect(self.remote_machine.host, 18861)
