@@ -1,5 +1,8 @@
 import socket
+from contextlib import closing
 from pathlib import Path
+from rpyc.core import brine
+from rpyc.utils.registry import REGISTRY_PORT, MAX_DGRAM_SIZE
 
 
 def get_repo_root() -> Path:
@@ -21,4 +24,17 @@ def get_local_ip():
     finally:
         s.close()
     return local_ip
+
+def registry_server_is_up():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    with closing(sock):
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, True)
+        data = brine.dump(("RPYC", "LIST", ((None,),)))
+        sock.sendto(data, ("255.255.255.255", REGISTRY_PORT))
+        sock.settimeout(1)
+        try:
+            data, _ = sock.recvfrom(MAX_DGRAM_SIZE)
+        except (socket.error, socket.timeout):
+            return False
+        return True
 

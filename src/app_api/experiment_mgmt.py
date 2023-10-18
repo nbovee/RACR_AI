@@ -146,7 +146,7 @@ class Experiment:
         self.events = {
             "registry_ready": threading.Event(),
             "remote_log_ready": threading.Event(),
-            "all_nodes_finished": threading.Event()
+            "observer_up": threading.Event(),
         }
 
     def run(self) -> None:
@@ -154,8 +154,19 @@ class Experiment:
         Runs the experiment according to the current attributes set. Experiments can be modified
         from their original state by changing self.manifest before calling this method.
         """
+        self.threads["registry_svr"].start()
+        self.threads["remote_log_svr"].start()
 
-        # START THE SERVERS from self.threads HERE
+        self.events["registry_ready"].wait()
+        self.events["remote_log_ready"].wait()
+
+        self.threads["observer_svr"].start()
+        self.events["observer_up"].wait()
+
+        self.threads["participant_svrs"].start()
+
+        self.verify_all_nodes_up()
+        self.start_handshake()
 
         self.wait_for_ready()
         self.send_start_signal_to_observer()
@@ -164,12 +175,21 @@ class Experiment:
     def start_registry(self) -> None:
         atexit.register(self.registry_server.close)
         self.registry_server.start()
-        self.events["registry_ready"].set()
+
+    def check_registry_server(self):
+        for _ in range(5):
+            if utils.registry_server_is_up():
+                self.events["registry_ready"].set()
+                return
+        raise TimeoutError(f"Registry server took too long to become available")
 
     def start_remote_log_server(self) -> None:
         atexit.register(self.remote_log_server.shutdown)
         self.remote_log_server.serve_forever()
         self.events["remote_log_ready"].set()
+
+    def check_remote_log_server(self) - None:
+
 
     def start_observer_node(self) -> None:
         all_node_names = self.manifest.get_participant_instance_names()
@@ -180,33 +200,43 @@ class Experiment:
 
         atexit.register(self.observer_node.close)
         self.observer_node.start()
+        self.events["observer_up"].set()
 
     def start_participant_nodes(self) -> None:
         zdeploy_node_param_list = self.manifest.get_zdeploy_params(self.available_devices)
         for params in zdeploy_node_param_list:
             self.participant_nodes.append(ZeroDeployedServer(*params))
 
-    def wait_for_ready(self) -> None:
-        success = False
-        n_attempts = 15
-        observer_connected = False
+    def verify_all_nodes_up(self):
+        service_names = self.manifest.get_participant_instance_names()
+        service_names.append("OBSERVER")
+        n_attempts = 5
         while n_attempts > 0:
-            if not observer_connected:
-                try:
-                    self.observer_conn = rpyc.connect_by_service("OBSERVER").root
-                    observer_connected = True
-                except DiscoveryError:
-                    sleep(1)
-                    n_attempts -= 1
-                    continue
+            available_services = rpyc.list_services()
+            assert isinstance(available_services, tuple)
+            if all([(s in available_services) for s in service_names]):
+                return
+            n_attempts -= 1
+            sleep(2)
+        available_services = rpyc.list_services()
+        assert isinstance(available_services, tuple)
+        straglers = [s for s in service_names if s not in available_services]
+        raise TimeoutError(
+            f"Waited too long for the following services to register: {straglers}"
+        )
+
+    def start_handshake(self):
+        self.observer_conn = rpyc.connect_by_service("OBSERVER")
+        self.observer_conn.get_ready()
+
+    def wait_for_ready(self) -> None:
+        n_attempts = 15
+        while n_attempts > 0:
             if self.observer_conn.get_status() == "ready":
-                success = True
-                break
+                return
             n_attempts -= 1 
             sleep(2)
-
-        if not success:
-            raise TimeoutError("Experiment object waited too long for observer to be ready.")
+        raise TimeoutError("Experiment object waited too long for observer to be ready.")
 
     def send_start_signal_to_observer(self) -> None:
         self.observer_conn.run()

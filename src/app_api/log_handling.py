@@ -100,5 +100,10 @@ def setup_logging(verbosity: int = 3):
 
 def start_remote_log_server():
     server = socketserver.TCPServer(("localhost", 9000), LogRecordStreamHandler)
+
+    def shutdown_with_log():
+        print("Shutting down remote log server.")
+        server.shutdown()
+
+    atexit.register(shutdown_with_log)
     server.serve_forever()
-    atexit.register(server.shutdown)
