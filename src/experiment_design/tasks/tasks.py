@@ -1,5 +1,6 @@
 import uuid
 import numpy as np
+from typing import Any
 from PIL import Image
 from torch import Tensor
 from dataclasses import dataclass, field
@@ -37,7 +38,7 @@ class SimpleInferenceTask(Task):
     """
 
     priority: int = 5
-    input: Tensor | Image.Image
+    input: Any
     inference_id: str | None = None
     start_layer: int = 0
     end_layer: int | float = np.inf
