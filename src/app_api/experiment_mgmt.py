@@ -91,7 +91,7 @@ class ExperimentManifest:
         self.playbook = new_playbook
 
     def get_participant_instance_names(self) -> list[str]:
-        return [participant["instance_name"] for participant in self.participant_instances]
+        return [participant["instance_name"].upper() for participant in self.participant_instances]
 
     def get_zdeploy_params(
             self, available_devices: list[dm.Device]
@@ -215,15 +215,16 @@ class Experiment:
         logger.info("Verifying required nodes are up.")
         service_names = self.manifest.get_participant_instance_names()
         service_names.append("OBSERVER")
-        n_attempts = 10
+        n_attempts = 100
         while n_attempts > 0:
             available_services = rpyc.list_services()
-            logger.info(f"Query to rpyc.list_services: {available_services}")
+            if not n_attempts % 10:
+                logger.info(f"Query to rpyc.list_services: {available_services}")
             assert isinstance(available_services, tuple)
             if all([(s in available_services) for s in service_names]):
                 return
             n_attempts -= 1
-            sleep(5)
+            sleep(2)
         available_services = rpyc.list_services()
         assert isinstance(available_services, tuple)
         straglers = [s for s in service_names if s not in available_services]

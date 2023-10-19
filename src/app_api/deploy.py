@@ -42,7 +42,24 @@ observer_ip       = "$OBS-IP$"
 max_uptime        = $MAX-UPTIME$
 
 
-def setup_tracr_logger(node_name, host, observer_ip):
+class LoggerWriter:
+    def __init__(self, logfct):
+        self.logfct = logfct
+        self.buf = []
+
+    def write(self, msg):
+        if msg.endswith('\n'):
+            self.buf.append(msg.removesuffix('\n'))
+            self.logfct(''.join(self.buf))
+            self.buf = []
+        else:
+            self.buf.append(msg)
+
+    def flush(self):
+        pass
+
+
+def setup_remote_logger(node_name, host, observer_ip):
     old_factory = logging.getLogRecordFactory()
 
     def record_factory(*args, **kwargs):
@@ -60,8 +77,13 @@ def setup_tracr_logger(node_name, host, observer_ip):
 
     return logger
 
-logger = setup_tracr_logger(node_name, participant_host, observer_ip)
-logger.error("Zero deploy sequence started. Removing __pycache__ and *.pyc files from tempdir.")
+logger = setup_remote_logger(node_name, participant_host, observer_ip)
+sys.stdout = LoggerWriter(logger.info)
+sys.stderr = LoggerWriter(logger.error)
+logger.info("Zero deploy sequence started.")
+
+logger.info(f"Using Python {str(sys.version_info)}."}
+logger.info("Removing __pycache__ and *.pyc files from tempdir.")
 
 here = os.path.dirname(__file__)
 os.chdir(here)
@@ -141,7 +163,7 @@ class ZeroDeployedServer(DeployedServer):
                  participant_service: tuple[str, str],
                  server_class="rpyc.utils.server.ThreadedServer",
                  python_executable=None,
-                 timeout_s: int | float = 30):
+                 timeout_s: int | float = 300):
         logger.debug( f"Constructing ZeroDeployedServer for {node_name}.")
         assert device.working_cparams is not None
         self.proc = None
@@ -165,7 +187,6 @@ class ZeroDeployedServer(DeployedServer):
         m_module, m_class = model
         ps_module, ps_class = participant_service
         observer_ip = utils.get_local_ip()
-        logger.info(utils.get_local_ip())
         participant_host = device.working_cparams.host
         script.write(
             SERVER_SCRIPT.replace(    # type: ignore
@@ -197,15 +218,22 @@ class ZeroDeployedServer(DeployedServer):
         else:
             major = sys.version_info[0]
             minor = sys.version_info[1]
+            logger.info(
+                f"Observer uses Python {major}.{minor}. Looking for equivalent Python executable on {node_name}"
+            )
             cmd = None
             for opt in [f"python{major}.{minor}", f"python{major}"]:
                 try:
+                    logger.info(f"Checking {opt}")
                     cmd = self.remote_machine[opt]
+                    logger.info(f"{opt} is available.")
                 except CommandNotFound:
+                    logger.info(f"{opt} is not available.")
                     pass
                 else:
                     break
             if not cmd:
+                logger.warning(f"Had to use the default python interpreter, which could cause problems.")
                 cmd = self.remote_machine.python
 
         assert isinstance(cmd, RemoteCommand)

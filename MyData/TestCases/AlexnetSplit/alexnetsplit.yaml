@@ -23,13 +23,13 @@ participant_types:
 # but it's done here to disambiguate)
 participant_instances:
   # just find any available device
-  - device: any
+  - device: SteveOldLaptop
     # must correspond to one of the types defined above
     node_type: client
     # how the instance will be referred to throughout the experiment
     instance_name: client1
     # specify one of the known devices in known_devices.yaml
-  - device: SteveOldLaptop
+  - device: any
     node_type: edge
     instance_name: edge1
 
