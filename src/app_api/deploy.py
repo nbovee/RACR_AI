@@ -82,7 +82,7 @@ sys.stdout = LoggerWriter(logger.info)
 sys.stderr = LoggerWriter(logger.error)
 logger.info("Zero deploy sequence started.")
 
-logger.info(f"Using Python {str(sys.version_info)}."}
+logger.info(f"Using Python {str(sys.version_info)}.")
 logger.info("Removing __pycache__ and *.pyc files from tempdir.")
 
 here = os.path.dirname(__file__)
@@ -163,7 +163,7 @@ class ZeroDeployedServer(DeployedServer):
                  participant_service: tuple[str, str],
                  server_class="rpyc.utils.server.ThreadedServer",
                  python_executable=None,
-                 timeout_s: int | float = 300):
+                 timeout_s: int = 300):
         logger.debug( f"Constructing ZeroDeployedServer for {node_name}.")
         assert device.working_cparams is not None
         self.proc = None

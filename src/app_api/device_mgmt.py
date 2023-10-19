@@ -6,7 +6,7 @@ import yaml
 from plumbum import SshMachine
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
-from typing import Self
+from typing import Union
 
 from src.app_api import utils
 
@@ -37,7 +37,7 @@ class LAN:
         for ip in ipaddress.ip_network("192.168.1.0/24").hosts()]
 
     @classmethod
-    def host_is_reachable(cls, host: str, port: int, timeout: int | float) -> bool:
+    def host_is_reachable(cls, host: str, port: int, timeout: Union[int, float]) -> bool:
         """
         Checks if the host is available at all, but does not attempt to authenticate.
         """
@@ -52,7 +52,7 @@ class LAN:
     def get_available_hosts(cls,
         try_hosts: list[str] = LOCAL_CIDR_BLOCK,
         port: int =22,
-        timeout: int | float = 0.5,
+        timeout: Union[int, float] = 0.5,
         max_threads: int = 50) -> list[str]:
         """
         Takes a list of strings (ip or hostname) and returns a new list containing only those that
@@ -82,7 +82,7 @@ class SSHConnectionParams:
     """
 
     SSH_PORT: int = 22
-    TIMEOUT_SECONDS: int | float = 0.5
+    TIMEOUT_SECONDS: Union[int, float] = 0.5
 
     host: str  # hostname or ip
     user: str
@@ -94,7 +94,7 @@ class SSHConnectionParams:
     def __init__(self,
                  host: str,
                  username: str,
-                 rsa_pkey_path: pathlib.Path | str,
+                 rsa_pkey_path: Union[pathlib.Path, str],
                  default: bool = True) -> None:
         """
         Both parameters are validated and the given pkey path is converted to a paramiko.RSAKey
@@ -106,7 +106,7 @@ class SSHConnectionParams:
         self._default = default
 
     @classmethod
-    def from_dict(cls, source: dict) -> Self:
+    def from_dict(cls, source: dict):
         """
         Construct an instance of SSHConnectionParams from its dictionary representation.
         """
@@ -135,7 +135,7 @@ class SSHConnectionParams:
         else:
             raise ValueError(f"Bad username '{username}' given.")
 
-    def _set_pkey(self, rsa_pkey_path: pathlib.Path | str) -> None:
+    def _set_pkey(self, rsa_pkey_path: Union[pathlib.Path, str]) -> None:
         """
         Validates the given path to the rsa key, converts it to a paramiko.RSAKey instance, and
         stores it, or raises an error if invalid.
@@ -179,7 +179,7 @@ class Device:
     _type: str
     _cparams: list[SSHConnectionParams]
 
-    working_cparams: SSHConnectionParams | None
+    working_cparams: Union[SSHConnectionParams, None]
 
     def __init__(self, name: str, record: dict) -> None:
         self._name = name
@@ -200,7 +200,7 @@ class Device:
         """
         return self.working_cparams is not None
 
-    def serialized(self) -> tuple[str, dict[str, str | bool]]:
+    def serialized(self) -> tuple[str, dict[str, Union[str, bool]]]:
         """
         Used to serialize Device objects.
         """
@@ -208,7 +208,7 @@ class Device:
         value = {"device_type": self._type, "connection_params": [c.as_dict() for c in self._cparams]}
         return key, value
 
-    def get_current(self, attr: str) -> str | None:
+    def get_current(self, attr: str) -> Union[str, None]:
         """
         Gets the CURRENT host or user. Necessary because a single device may have multiple connection_params
         associated with it.
@@ -244,7 +244,7 @@ class DeviceMgr:
     devices: list[Device]
     datafile_path: pathlib.Path
 
-    def __init__(self, dfile_path: pathlib.Path | None = None) -> None:
+    def __init__(self, dfile_path: Union[pathlib.Path, None] = None) -> None:
         if dfile_path is None:
             self.datafile_path = self.DATAFILE_PATH
         elif isinstance(dfile_path, pathlib.Path):
