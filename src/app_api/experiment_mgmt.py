@@ -6,11 +6,10 @@ import pickle
 import threading
 from time import sleep
 import rpyc
-from rpyc.utils.factory import DiscoveryError
 from rpyc.utils.server import ThreadedServer
 import yaml
 from rpyc.utils.registry import UDPRegistryServer
-from socketserver import TCPServer
+from typing import Union
 
 from src.app_api.deploy import ZeroDeployedServer
 from src.experiment_design.node_behavior.base import ObserverService
@@ -64,7 +63,7 @@ class ExperimentManifest:
         self.participant_instances = pinstances
 
     def create_and_set_playbook(
-            self, playbook: dict[str, list[dict[str, str | dict[str, str]]]]
+            self, playbook: dict[str, list[dict[str, Union[str, dict[str, str]]]]]
         ) -> None:
         new_playbook = {instance_name: [] for instance_name in playbook.keys()}
         for instance_name, tasklist in playbook.items():
@@ -234,7 +233,7 @@ class Experiment:
 
     def start_handshake(self):
         self.observer_conn = rpyc.connect_by_service("OBSERVER")
-        self.observer_conn.get_ready()
+        self.observer_conn.root.get_ready()
 
     def wait_for_ready(self) -> None:
         n_attempts = 15

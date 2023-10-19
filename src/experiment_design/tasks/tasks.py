@@ -1,6 +1,6 @@
 import uuid
 import numpy as np
-from typing import Any
+from typing import Any, Union
 from PIL import Image
 from torch import Tensor
 from dataclasses import dataclass, field
@@ -39,18 +39,18 @@ class SimpleInferenceTask(Task):
 
     priority: int = 5
     input: Any
-    inference_id: str | None = None
+    inference_id: Union[str, None] = None
     start_layer: int = 0
-    end_layer: int | float = np.inf
-    downstream_node: str | None = None
+    end_layer: Union[int, float] = np.inf
+    downstream_node: Union[str, None] = None
 
     def __init__(self,
                  from_node: str,
-                 input: Tensor | Image.Image,
-                 inference_id: str | None = None,
+                 input: Any, 
+                 inference_id: Union[str, None] = None,
                  start_layer: int = 0,
-                 end_layer: int | float = np.inf,
-                 downstream_node: str | None = None
+                 end_layer: Union[int, float] = np.inf,
+                 downstream_node: Union[str, None] = None
                  ):
         super().__init__(from_node)
         self.input = input
@@ -79,12 +79,12 @@ class SingleInputInferenceTask(Task):
     """
 
     priority: int = 5
-    input: Tensor | Image.Image
-    inference_id: str | None = None
+    input: Any
+    inference_id: Union[str, None] = None
 
     def __init__(self,
-                 input: Tensor | Image.Image,
-                 inference_id: str | None = None,
+                 input: Any,
+                 inference_id: Union[str, None] = None,
                  from_node: str = "OBSERVER"
                  ):
         super().__init__(from_node)

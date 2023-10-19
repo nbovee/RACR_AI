@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import logging
+import sys
 import threading
 import uuid
 import rpyc
@@ -51,12 +52,16 @@ class NodeService(rpyc.Service):
     node_name: str
     status: str
     partners: list[str]
+    classname: str = "NodeService"
 
     def __init__(self):
         super().__init__()
         self.status = "initializing"
         self.node_name = self.ALIASES[0].upper().strip()
         self.active_connections = {}
+
+    def class_object_reference(self):
+        return getattr(sys.modules[__name__], self.classname)
 
     def on_connect(self, conn: Connection):
         if isinstance(conn.root, NodeService):
@@ -81,7 +86,7 @@ class NodeService(rpyc.Service):
         logger.debug(
             f"Connection to {node_name} not memoized; attempting to access via registry."
         )
-        conn = rpyc.connect_by_service(node_name, service=self)  # type: ignore
+        conn = rpyc.connect_by_service(node_name, service=self.class_object_reference())
         self.active_connections[node_name] = conn.root
         logger.info(f"New connection to {node_name} established and memoized.")
         return self.active_connections[node_name]
@@ -135,6 +140,7 @@ class ObserverService(NodeService):
 
     master_dict: MasterDict
     playbook: dict[str, list[tasks.Task]]
+    classname: str = "ObserverService"
 
     def __init__(self,
                  partners: list[str],

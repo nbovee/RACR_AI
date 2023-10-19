@@ -1,3 +1,4 @@
+from typing import Union
 import numpy as np
 from PIL import Image
 import torch
@@ -38,7 +39,7 @@ class WrappedModel(nn.Module):
         "watts_used": None,
     }
 
-    def __init__(self, *args, master_dict: MasterDict | None = None, **kwargs):
+    def __init__(self, *args, master_dict: Union[MasterDict, None] = None, **kwargs):
         print(*args)
         super().__init__(*args)
         self.timer = time.perf_counter_ns
@@ -185,12 +186,12 @@ class WrappedModel(nn.Module):
         return hook
 
     def forward(self,
-                x: torch.Tensor | Image.Image,
-                inference_id: str | None = None,
+                x,
+                inference_id: Union[str, None] = None,
                 start: int = 0,
-                end: int | float = np.inf,
+                end: Union[int, float] = np.inf,
                 log: bool = True,
-                by_node: str | None = None) -> torch.Tensor:
+                by_node: Union[str, None] = None) -> torch.Tensor:
         """Wraps the pretrained forward pass to utilize our slicing."""
         end = self.splittable_layer_count if end == np.inf else end
 

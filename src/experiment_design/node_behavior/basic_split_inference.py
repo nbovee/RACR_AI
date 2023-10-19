@@ -36,6 +36,7 @@ class ClientService(ParticipantService):
     ALIASES: list[str] = ["CLIENT", "PARTICIPANT"]
 
     partners: list[str] = ["OBSERVER", "EDGE"]
+    classname: str = "ClientService"
 
     def inference_sequence_per_input(self, task: tasks.SingleInputInferenceTask):
         assert self.model is not None
@@ -75,4 +76,5 @@ class EdgeService(ParticipantService):
     """
     ALIASES: list[str] = ["EDGE", "PARTICIPANT"]
     partners: list[str] = ["OBSERVER", "CLIENT"]
+    classname: str = "EdgeService"
 
