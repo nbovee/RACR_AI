@@ -10,7 +10,8 @@ the word "python".
 """
 
 import logging
-logger = logging.getLogger("main_logger")
+import threading
+logger = logging.getLogger("tracr_logger")
 
 import argparse
 from rich.console import Console
@@ -141,14 +142,23 @@ def experiment_run(args):
     Runs an experiment.
     """
     exp_name = args.name
+    logger.info(f"Attempting to set up experiment {exp_name}.")
     testcase_dir = PROJECT_ROOT / "MyData" / "TestCases"
     manifest_yaml_fp = next(testcase_dir.glob(f"**/*{exp_name}.yaml"))
+    logger.debug(f"Found manifest at {str(manifest_yaml_fp)}.")
+    rlog_server = log_handling.get_server_running_in_thread()
     manifest = ExperimentManifest(manifest_yaml_fp)
 
+    logger.debug("Initializing DeviceMgr object.")
     device_manager = DeviceMgr()
     available_devices = device_manager.get_devices(available_only=True)
+
+    logger.debug("Initializing Experiment object.")
     experiment = Experiment(manifest, available_devices)
+    logger.debug(f"Running experiment {exp_name}.")
     experiment.run()
+
+    log_handling.shutdown_gracefully(rlog_server)
 
 def network(args):
     if args.d:

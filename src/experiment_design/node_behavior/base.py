@@ -20,6 +20,9 @@ from src.experiment_design.datasets.dataset import BaseDataset
 from src.experiment_design.records.master_dict import MasterDict
 
 
+logger = logging.getLogger("tracr_logger")
+
+
 class HandshakeFailureException(Exception):
     """
     Raised if a node fails to establish a handshake with any of its specified partners.
@@ -47,7 +50,6 @@ class NodeService(rpyc.Service):
     active_connections: dict[str, NodeService]
     node_name: str
     status: str
-    logger: logging.Logger
     partners: list[str]
 
     def __init__(self):
@@ -58,30 +60,30 @@ class NodeService(rpyc.Service):
 
     def on_connect(self, conn: Connection):
         if isinstance(conn.root, NodeService):
-            self.logger.info(
+            logger.info(
                 f"on_connect method called; memoizing connection to {conn.root.get_node_name()}"
             )
             self.active_connections[conn.root.get_node_name()] = conn.root
 
     def on_disconnect(self, conn: Connection):
-        self.logger.info("on_disconnect method called; removing saved connection.")
+        logger.info("on_disconnect method called; removing saved connection.")
         for name in self.active_connections:
             if self.active_connections[name] == conn:
                 self.active_connections.pop(name)
-                self.logger.info(f"Removed connection to {name}")
+                logger.info(f"Removed connection to {name}")
 
     def get_connection(self, node_name: str) -> NodeService:
         node_name = node_name.upper().strip()
-        self.logger.debug(f"Attempting to get connection to {node_name}.")
+        logger.debug(f"Attempting to get connection to {node_name}.")
         if node_name in self.active_connections:
-            self.logger.debug(f"Connection to {node_name} already memoized.")
+            logger.debug(f"Connection to {node_name} already memoized.")
             return self.active_connections[node_name]
-        self.logger.debug(
+        logger.debug(
             f"Connection to {node_name} not memoized; attempting to access via registry."
         )
         conn = rpyc.connect_by_service(node_name, service=self)  # type: ignore
         self.active_connections[node_name] = conn.root
-        self.logger.info(f"New connection to {node_name} established and memoized.")
+        logger.info(f"New connection to {node_name} established and memoized.")
         return self.active_connections[node_name]
 
     @rpyc.exposed
@@ -114,12 +116,12 @@ class NodeService(rpyc.Service):
 
     @rpyc.exposed
     def get_status(self) -> str:
-        self.logger.debug(f"get_status exposed method called; returning '{self.status}'")
+        logger.debug(f"get_status exposed method called; returning '{self.status}'")
         return self.status
 
     @rpyc.exposed
     def get_node_name(self) -> str:
-        self.logger.debug(f"get_node_name exposed method called; returning '{self.node_name}'")
+        logger.debug(f"get_node_name exposed method called; returning '{self.node_name}'")
         return self.node_name
 
 
@@ -140,9 +142,9 @@ class ObserverService(NodeService):
                  ):
         super().__init__()
         self.partners = partners
-        self.logger = logging.getLogger("main_logger")
         self.master_dict = MasterDict()
         self.playbook = playbook
+        logger.info("Finished initializing ObserverService object.")
 
     @rpyc.exposed
     def get_ready(self):
@@ -224,7 +226,6 @@ class ParticipantService(NodeService):
                  ModelCls: Type[nn.Module] | None,
                  ):
         super().__init__()
-        self.logger = logging.getLogger(f"{self.node_name}_logger")
         self.ModelCls = ModelCls
         self.task_map = {
             tasks.SimpleInferenceTask: self.simple_inference,

@@ -1,5 +1,6 @@
 from io import BufferedReader
 from time import sleep
+from plumbum.machines.session import ShellSessionError
 import rpyc
 import logging
 import sys
@@ -15,7 +16,7 @@ import src.app_api.device_mgmt as dm
 import src.app_api.utils as utils
 
 
-logger = logging.getLogger("main_logger")
+logger = logging.getLogger("tracr_logger")
 
 
 SERVER_SCRIPT = r"""\
@@ -35,25 +36,32 @@ model_class       = "$MOD-CLASS$"
 model_module      = "$MOD-MODULE$"
 ps_module         = "$PS-MODULE$"
 ps_class          = "$PS-CLASS$"
-node_name         = "$NODE-NAME$"
+node_name         = "$NODE-NAME$".upper()
 participant_host  = "$PRT-HOST$"
 observer_ip       = "$OBS-IP$"
 max_uptime        = $MAX-UPTIME$
 
 
-def setup_remote_logger(node_name, host, observer_ip):
-    logger = logging.getLogger(f"{node_name}_logger")
+def setup_tracr_logger(node_name, host, observer_ip):
+    old_factory = logging.getLogRecordFactory()
+
+    def record_factory(*args, **kwargs):
+        record = old_factory(*args, **kwargs)
+        record.origin = f"{node_name.upper()}@{participant_host}"
+        return record
+
+    logging.setLogRecordFactory(record_factory)
+    logger = logging.getLogger("tracr_logger")
+
     logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(f"{node_name}@{host}: %(message)s")
 
     socket_handler = logging.handlers.SocketHandler(observer_ip, 9000)
-    socket_handler.setFormatter(formatter)
-
     logger.addHandler(socket_handler)
+
     return logger
 
-logger = setup_remote_logger(node_name, participant_host, observer_ip)
-logger.info("Zero deploy sequence started. Removing __pycache__ and *.pyc files from tempdir.")
+logger = setup_tracr_logger(node_name, participant_host, observer_ip)
+logger.error("Zero deploy sequence started. Removing __pycache__ and *.pyc files from tempdir.")
 
 here = os.path.dirname(__file__)
 os.chdir(here)
@@ -88,8 +96,12 @@ logger.info(f"Importing {ps_class} from src.experiment_design.node_behavior.{ps_
 m = import_module(f"src.experiment_design.node_behavior.{ps_module}")
 CustomParticipantService = getattr(m, ps_class)
 
+# One way to programmatically set the service's formal name
+class $NODE-NAME$Service(CustomParticipantService):
+    ALIASES = [node_name, "PARTICIPANT"]
+
 logger.info("Constructing participant_service instance.")
-participant_service = CustomParticipantService(Model)
+participant_service = $NODE-NAME$Service(Model)
 
 done_event = Event()
 participant_service.set_done_event(done_event)
@@ -116,6 +128,7 @@ finally:
     close_server_finally()
 """
 
+
 class ZeroDeployedServer(DeployedServer):
 
     stdout: BufferedReader
@@ -129,11 +142,7 @@ class ZeroDeployedServer(DeployedServer):
                  server_class="rpyc.utils.server.ThreadedServer",
                  python_executable=None,
                  timeout_s: int | float = 30):
-        logger.debug(
-            f"Constructing ZeroDeployedServer with params: device={device}, node_name={node_name}, " +
-            f"model={model}, participant_service={participant_service}, server_class={server_class}, " +
-            f"python_executable={python_executable}"
-        )
+        logger.debug( f"Constructing ZeroDeployedServer for {node_name}.")
         assert device.working_cparams is not None
         self.proc = None
         self.remote_machine = device.as_pb_sshmachine()
@@ -202,8 +211,13 @@ class ZeroDeployedServer(DeployedServer):
         assert isinstance(cmd, RemoteCommand)
         self.proc = cmd.popen(script, new_session=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.stdout, self.stderr = self.proc.stdout, self.proc.stdout
-        print(type(self.stdout), type(self.stderr))
 
     def _connect_sock(self):
         return SocketStream._connect(self.remote_machine.host, 18861)
+
+    def __del__(self):
+        try:
+            super().__del__
+        except (AttributeError, ShellSessionError):
+            pass
 
