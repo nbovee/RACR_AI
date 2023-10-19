@@ -1,5 +1,6 @@
 import atexit
 from datetime import datetime
+import logging
 import pathlib
 import pickle
 import threading
@@ -21,6 +22,7 @@ import src.app_api.log_handling as log
 
 
 TEST_CASE_DIR: pathlib.Path = utils.get_repo_root() / "MyData" / "TestCases"
+logger = logging.getLogger("tracr_logger")
 
 
 class ExperimentManifest:
@@ -127,7 +129,6 @@ class Experiment:
     available_devices: list[dm.Device]
     manifest: ExperimentManifest
     registry_server: UDPRegistryServer = UDPRegistryServer(allow_listing=True)
-    remote_log_server: TCPServer = TCPServer(("localhost", 9000), log.LogRecordStreamHandler)
     observer_node: ThreadedServer
     observer_conn: ObserverService
     participant_nodes: list[ZeroDeployedServer] = []
@@ -139,12 +140,10 @@ class Experiment:
         self.manifest = manifest
         self.threads = {
             "registry_svr": threading.Thread(target=self.start_registry, daemon=True),
-            "remote_log_svr": threading.Thread(target=self.start_remote_log_server, daemon=True),
             "observer_svr": threading.Thread(target=self.start_observer_node, daemon=True),
         }
         self.events = {
             "registry_ready": threading.Event(),
-            "remote_log_ready": threading.Event(),
             "observer_up": threading.Event(),
         }
 
@@ -154,11 +153,9 @@ class Experiment:
         from their original state by changing self.manifest before calling this method.
         """
         self.threads["registry_svr"].start()
-        self.threads["remote_log_svr"].start()
         self.check_registry_server()
         self.check_remote_log_server()
         self.events["registry_ready"].wait()
-        self.events["remote_log_ready"].wait()
 
         self.threads["observer_svr"].start()
         self.check_observer_node()
@@ -180,19 +177,14 @@ class Experiment:
             if utils.registry_server_is_up():
                 self.events["registry_ready"].set()
                 return
-        raise TimeoutError(f"Registry server took too long to become available")
-
-    def start_remote_log_server(self) -> None:
-        atexit.register(self.remote_log_server.shutdown)
-        self.remote_log_server.serve_forever()
-        self.events["remote_log_ready"].set()
+        raise TimeoutError("Registry server took too long to become available")
 
     def check_remote_log_server(self) -> None:
         for _ in range(5):
             if utils.log_server_is_up():
-                self.events["remote_log_ready"].set()
+                logger.info("Remote log server is up and listening.")
                 return
-        raise TimeoutError(f"Remote log server took too long to become available")
+        raise TimeoutError("Remote log server took too long to become available")
 
     def start_observer_node(self) -> None:
         all_node_names = self.manifest.get_participant_instance_names()
@@ -220,16 +212,18 @@ class Experiment:
             self.participant_nodes.append(ZeroDeployedServer(*params))
 
     def verify_all_nodes_up(self):
+        logger.info("Verifying required nodes are up.")
         service_names = self.manifest.get_participant_instance_names()
         service_names.append("OBSERVER")
-        n_attempts = 5
+        n_attempts = 10
         while n_attempts > 0:
             available_services = rpyc.list_services()
+            logger.info(f"Query to rpyc.list_services: {available_services}")
             assert isinstance(available_services, tuple)
             if all([(s in available_services) for s in service_names]):
                 return
             n_attempts -= 1
-            sleep(2)
+            sleep(5)
         available_services = rpyc.list_services()
         assert isinstance(available_services, tuple)
         straglers = [s for s in service_names if s not in available_services]
@@ -269,5 +263,4 @@ class Experiment:
         self.registry_server.close()
         for p in self.participant_nodes:
             p.close()
-        self.remote_log_server.shutdown()
 
