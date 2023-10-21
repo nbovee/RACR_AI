@@ -77,7 +77,7 @@ class ColorByDeviceFormatter(logging.Formatter):
         device_name = tag.split('@')[0].upper()
 
         ctag, cbody = self.get_color(device_name)
-        message = f"[{ctag}]{tag}[/]: [{cbody}]{msg_body}[/]"
+        message = f"[bold {ctag}]{tag}[/]: [{cbody}]{msg_body}[/]"
 
         return message
 

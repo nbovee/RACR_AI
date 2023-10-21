@@ -68,14 +68,14 @@ class ImagenetDataset(BaseDataset):
 
 # All 999 images as PIL objects converted to RGB
 imagenet999_rgb = ImagenetDataset()
-# Same, but just the first 10 
+# Same, but just the first 10
 imagenet10_rgb = ImagenetDataset(max_iter=10)
 
 # This gives all 999 images as torch Tensors
 imagenet999_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor()]))
-# And this gives the same, but only the first 10 
+# And this gives the same, but only the first 10
 imagenet10_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor()]), max_iter=10)
 
 # And here's the sad little dataset I've been using for tests
-imagenet2_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor()]), max_iter=2)
+imagenet1_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor()]), max_iter=1)
 
