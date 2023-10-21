@@ -26,8 +26,13 @@ import atexit
 import shutil
 import logging
 import logging.handlers
+import rpyc.core.protocol
 from importlib import import_module
 from threading import Event
+
+
+rpyc.core.protocol.DEFAULT_CONFIG["allow_pickle"] = True
+rpyc.core.protocol.DEFAULT_CONFIG["allow_public_attrs"] = True
 
 
 server_module     = "$SVR-MODULE$"
@@ -129,7 +134,12 @@ done_event = Event()
 participant_service.set_done_event(done_event)
 
 logger.info("Starting RPC server in thread.")
-server = ServerCls(participant_service, port=18861, reuse_addr=True, logger=logger, auto_register=True)
+server = ServerCls(participant_service,
+                   port=18861,
+                   reuse_addr=True,
+                   logger=logger,
+                   auto_register=True,
+                   protocol_config=rpyc.core.protocol.DEFAULT_CONFIG)
 
 def close_server_atexit():
     logger.info("Closing server due to atexit invocation.")
@@ -163,7 +173,7 @@ class ZeroDeployedServer(DeployedServer):
                  participant_service: tuple[str, str],
                  server_class="rpyc.utils.server.ThreadedServer",
                  python_executable=None,
-                 timeout_s: int = 300):
+                 timeout_s: int = 600):
         logger.debug( f"Constructing ZeroDeployedServer for {node_name}.")
         assert device.working_cparams is not None
         self.proc = None
