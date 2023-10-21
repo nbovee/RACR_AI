@@ -24,7 +24,8 @@ class ClientService(ParticipantService):
         3.) The `on_finish` method should send a `FinishSignalTask` instance to the edge node's 
             inbox so it knows it's done after it has finished all the inference tasks we sent it
 
-    We also add a DOWNSTREAM_PARTNER class attribute for readability/adaptability.
+    We also add a DOWNSTREAM_PARTNER class attribute for readability/adaptability, although this
+    isn't strictly necessary.
 
     When the experiment runs, this executor will actually respond to an instance of 
     `InferOverDatasetTask`, but because the base class's corresponding `infer_dataset` method just
@@ -32,7 +33,7 @@ class ClientService(ParticipantService):
     """
 
     DOWNSTREAM_PARTNER = "EDGE1"
-    ALIASES: list[str] = ["CLIENT", "PARTICIPANT"]
+    ALIASES: list[str] = ["CLIENT1", "PARTICIPANT"]
 
     partners: list[str] = ["OBSERVER", "EDGE1"]
 
@@ -45,6 +46,7 @@ class ClientService(ParticipantService):
         while current_split_layer < splittable_layer_count:
             inference_id = str(uuid.uuid4())
             start, end = 0, current_split_layer
+            # TODO: just call model
             out = self.model.forward(
                 input, inference_id, start=start, end=end, by_node=self.node_name
             )

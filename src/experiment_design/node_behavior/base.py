@@ -5,6 +5,7 @@ import sys
 import threading
 import uuid
 import rpyc
+import asyncio
 import rpyc.core.protocol
 from rpyc.utils.classic import obtain
 import torch.nn as nn
@@ -14,7 +15,6 @@ from importlib import import_module
 from rpyc.core.protocol import Connection
 from time import sleep
 from typing import Callable
-from torch.utils.data import DataLoader
 from rpyc.utils.factory import DiscoveryError
 
 import src.experiment_design.tasks.tasks as tasks
@@ -69,6 +69,7 @@ class NodeService(rpyc.Service):
 
     def on_connect(self, conn: Connection):
         assert conn.root is not None
+        conn._config["sync_request_timeout"] = 60
 
         try:
             node_name = conn.root.get_node_name()
@@ -89,25 +90,29 @@ class NodeService(rpyc.Service):
 
     def get_connection(self, node_name: str):
         node_name = node_name.upper().strip()
-        logger.debug(f"Attempting to get connection to {node_name}.")
         if node_name in self.active_connections:
-            logger.debug(f"Connection to {node_name} already memoized.")
+            logger.debug(f"using saved connection to {node_name}")
             return self.active_connections[node_name]
-        logger.debug(
-            f"Connection to {node_name} not memoized; attempting to access via registry."
-        )
+        logger.debug(f"attempting to connect to {node_name} via registry.")
         conn = rpyc.connect_by_service(
             node_name, service=self, config=rpyc.core.protocol.DEFAULT_CONFIG  # type: ignore
         )
+        conn._config["sync_request_timeout"] = 60
         self.active_connections[node_name] = conn
-        logger.info(f"New connection to {node_name} established and memoized.")
+        logger.info(f"new connection to {node_name} established and saved.")
         return self.active_connections[node_name]
 
     def handshake(self):
         logger.info(f"{self.node_name} starting handshake with partners {str(self.partners)}")
         for p in self.partners:
-            logger.debug(f"{self.node_name} attempting to connect to {p}")
-            self.get_connection(p)
+            for _ in range(3):
+                try:
+                    logger.debug(f"{self.node_name} attempting to connect to {p}")
+                    self.get_connection(p)
+                    break
+                except DiscoveryError:
+                    sleep(1)
+                    continue
         if all([(p in self.active_connections.keys()) for p in self.partners]):
             logger.info(f"Successful handshake with {str(self.partners)}")
         else:
@@ -198,7 +203,6 @@ class ObserverService(NodeService):
         self.delegate()
         self.status = "ready"
 
-
     @rpyc.exposed
     def get_master_dict(self) -> MasterDict:
         return self.master_dict
@@ -246,6 +250,8 @@ class ParticipantService(NodeService):
     inbox: PriorityQueue[tasks.Task] = PriorityQueue()
     task_map: dict[type, Callable]
     done_event: threading.Event | None
+    high_priority_lock: threading.Condition = threading.Condition()
+    mid_priority_lock: threading.Condition = threading.Condition()
 
     def __init__(self,
                  ModelCls: Type[nn.Module] | None,
@@ -271,7 +277,14 @@ class ParticipantService(NodeService):
 
     @rpyc.exposed
     def give_task(self, task: tasks.Task):
-        logger.info(f"Accepting {task.__class__} to inbox.")
+        logger.info(f"Receiving {task.__class__}.")
+        accept_task_thd = threading.Thread(target=self._accept_task, args=[task], daemon=True)
+        accept_task_thd.start()
+        return
+
+    def _accept_task(self, task):
+        logger.info(f"Accepting {task.__class__} to inbox in thread.")
+        task = obtain(task)
         self.inbox.put(task)
 
     def _run(self):
@@ -279,11 +292,13 @@ class ParticipantService(NodeService):
         self.status = "running"
         if self.inbox is not None:
             while self.status == "running":
+                if self.inbox.empty():
+                    sleep(5)
+                    continue
                 current_task = self.inbox.get()
                 self.process(current_task)
 
-    @rpyc.exposed
-    def get_ready(self):
+    def _get_ready(self):
         logger.info("Getting ready.")
         self.handshake()
         self.prepare_model()
@@ -298,7 +313,7 @@ class ParticipantService(NodeService):
         assert self.done_event is not None
         self.done_event.set()
 
-    def set_done_event(self, done_event: threading.Event):
+    def link_done_event(self, done_event: threading.Event):
         """
         Once the participant service has been deployed on the remote machine, it is given an 
         Event object to set once it's ready to self-destruct.
@@ -323,7 +338,7 @@ class ParticipantService(NodeService):
         inference_id = task.inference_id if task.inference_id is not None else str(uuid.uuid4())
         logger.info(f"Running simple inference on layers {str(task.start_layer)} through {str(task.end_layer)}")
         out = self.model.forward(
-            obtain(task.input), inference_id=inference_id, start=task.start_layer, end=task.end_layer
+            task.input, inference_id=inference_id, start=task.start_layer, end=task.end_layer
         )
  
         if task.downstream_node is not None and isinstance(task.end_layer, int):

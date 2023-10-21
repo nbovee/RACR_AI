@@ -131,7 +131,7 @@ logger.info("Constructing participant_service instance.")
 participant_service = $NODE-NAME$Service(Model)
 
 done_event = Event()
-participant_service.set_done_event(done_event)
+participant_service.link_done_event(done_event)
 
 logger.info("Starting RPC server in thread.")
 server = ServerCls(participant_service,
