@@ -128,8 +128,7 @@ class WrappedModel(nn.Module):
                             this_layer_id,
                             str(child).split("(")[0],
                             (0, 0),
-                        ),
-                        with_kwargs=False,
+                        )
                     )
                 )
                 self.f_pre_hooks.append(
@@ -138,8 +137,7 @@ class WrappedModel(nn.Module):
                             this_layer_id,
                             str(child).split("(")[0],
                             (0, 0),
-                        ),
-                        with_kwargs=False,
+                        )
                     )
                 )
                 print(

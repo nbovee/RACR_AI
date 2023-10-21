@@ -1,8 +1,12 @@
 import pathlib
+import logging
 from PIL import Image
 
-from dataset import BaseDataset
+from src.experiment_design.datasets.dataset import BaseDataset
 import torchvision.transforms as transforms
+
+
+logger = logging.getLogger("tracr_logger")
 
 
 class ImagenetDataset(BaseDataset):
@@ -24,16 +28,25 @@ class ImagenetDataset(BaseDataset):
         self.IMG_DIRECTORY = self.DATA_SOURCE_DIRECTORY / "imagenet" / "sample_images"
 
         with open(self.CLASS_TEXTFILE, 'r') as file:
-            img_labels = "\n".split(file.read())
-        if len(img_labels) > max_iter > 0:
+            img_labels = file.read().split("\n")
+        if len(img_labels) > max_iter:
             img_labels = img_labels[:max_iter]
+        img_labels = [label.replace(" ", "_") for label in img_labels]
 
         self.img_labels = img_labels
         self.img_dir = self.IMG_DIRECTORY
         self.transform = transform
         self.target_transform = target_transform
-        self.img_map = {img_class: next(self.img_dir.glob(f"*{img_class}*"))
-            for img_class in self.img_labels}
+        self.img_map = {}
+
+        for i in range(len(self.img_labels), 0, -1):
+            i -= 1
+            img_name = self.img_labels[i]
+            try:
+                self.img_map[img_name] = next(self.img_dir.glob(f"*{img_name}*"))
+            except StopIteration:
+                logger.warning(f"Couldn't find image with name {img_name} in directory. Skipping.")
+                self.img_labels.pop(i)
 
     def __len__(self):
         return len(self.img_labels)
@@ -45,6 +58,7 @@ class ImagenetDataset(BaseDataset):
 
         if self.transform:
             image = self.transform(image)
+            image = image.unsqueeze(0)
         if self.target_transform:
             label = self.target_transform(label)
 
@@ -58,7 +72,10 @@ imagenet999_rgb = ImagenetDataset()
 imagenet10_rgb = ImagenetDataset(max_iter=10)
 
 # This gives all 999 images as torch Tensors
-imagenet999_tr = ImagenetDataset(transform=transforms.ToTensor)
+imagenet999_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor()]))
 # And this gives the same, but only the first 10 
-imagenet10_tr = ImagenetDataset(transform=transforms.ToTensor, max_iter=10)
+imagenet10_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor()]), max_iter=10)
+
+# And here's the sad little dataset I've been using for tests
+imagenet2_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor()]), max_iter=2)
 

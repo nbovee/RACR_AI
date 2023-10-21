@@ -6,6 +6,7 @@ import pickle
 import threading
 from time import sleep
 import rpyc
+import rpyc.core.protocol
 from rpyc.utils.server import ThreadedServer
 import yaml
 from rpyc.utils.registry import UDPRegistryServer
@@ -17,7 +18,10 @@ from src.experiment_design.node_behavior.base import ObserverService
 import src.experiment_design.tasks.tasks as tasks
 import src.app_api.utils as utils
 import src.app_api.device_mgmt as dm
-import src.app_api.log_handling as log
+
+
+rpyc.core.protocol.DEFAULT_CONFIG["allow_pickle"] = True
+rpyc.core.protocol.DEFAULT_CONFIG["allow_public_attrs"] = True
 
 
 TEST_CASE_DIR: pathlib.Path = utils.get_repo_root() / "MyData" / "TestCases"
@@ -84,8 +88,8 @@ class ExperimentManifest:
                 elif "finish" in task_type:
                     task_object = tasks.FinishSignalTask()
 
-            assert task_object is not None
-            new_playbook[instance_name].append(task_object)
+                assert task_object is not None
+                new_playbook[instance_name].append(task_object)
 
         self.playbook = new_playbook
 
@@ -190,7 +194,9 @@ class Experiment:
         playbook = self.manifest.playbook
 
         observer_service = ObserverService(all_node_names, playbook)
-        self.observer_node = ThreadedServer(observer_service, auto_register=True)
+        self.observer_node = ThreadedServer(
+            observer_service, auto_register=True, protocol_config=rpyc.core.protocol.DEFAULT_CONFIG
+        )
 
         atexit.register(self.observer_node.close)
         self.observer_node.start()
@@ -232,8 +238,8 @@ class Experiment:
         )
 
     def start_handshake(self):
-        self.observer_conn = rpyc.connect_by_service("OBSERVER")
-        self.observer_conn.root.get_ready()
+        self.observer_conn = rpyc.connect_by_service("OBSERVER").root
+        self.observer_conn.get_ready()
 
     def wait_for_ready(self) -> None:
         n_attempts = 15
@@ -251,7 +257,7 @@ class Experiment:
         while True:
             if self.observer_conn.get_status() == "finished":
                 break
-            sleep(5)
+            sleep(2)
 
         master_dict = self.observer_conn.get_master_dict()
         fn = f"{self.manifest.name}__{datetime.now().strftime('%Y-%m-%dT%H%M%S')}.pkl"

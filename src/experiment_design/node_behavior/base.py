@@ -5,8 +5,10 @@ import sys
 import threading
 import uuid
 import rpyc
+import rpyc.core.protocol
+from rpyc.utils.classic import obtain
 import torch.nn as nn
-from typing import Type
+from typing import Any, Type
 from queue import PriorityQueue
 from importlib import import_module
 from rpyc.core.protocol import Connection
@@ -23,6 +25,8 @@ from src.experiment_design.records.master_dict import MasterDict
 
 logger = logging.getLogger("tracr_logger")
 
+rpyc.core.protocol.DEFAULT_CONFIG["allow_pickle"] = True
+rpyc.core.protocol.DEFAULT_CONFIG["allow_public_attrs"] = True
 
 class HandshakeFailureException(Exception):
     """
@@ -48,7 +52,7 @@ class NodeService(rpyc.Service):
     """
     ALIASES: list[str]
 
-    active_connections: dict[str, NodeService]
+    active_connections: dict[str, Any]
     node_name: str
     status: str
     partners: list[str]
@@ -64,11 +68,16 @@ class NodeService(rpyc.Service):
         return getattr(sys.modules[__name__], self.classname)
 
     def on_connect(self, conn: Connection):
-        if isinstance(conn.root, NodeService):
-            logger.info(
-                f"on_connect method called; memoizing connection to {conn.root.get_node_name()}"
-            )
-            self.active_connections[conn.root.get_node_name()] = conn.root
+        assert conn.root is not None
+
+        try:
+            node_name = conn.root.get_node_name()
+        except AttributeError:
+            # must be the VoidService exposed by the Experiment object, not another NodeService
+            node_name = "APP.PY"
+
+        self.active_connections[node_name] = conn
+        return
 
     def on_disconnect(self, conn: Connection):
         logger.info("on_disconnect method called; removing saved connection.")
@@ -76,8 +85,9 @@ class NodeService(rpyc.Service):
             if self.active_connections[name] == conn:
                 self.active_connections.pop(name)
                 logger.info(f"Removed connection to {name}")
+                return
 
-    def get_connection(self, node_name: str) -> NodeService:
+    def get_connection(self, node_name: str):
         node_name = node_name.upper().strip()
         logger.debug(f"Attempting to get connection to {node_name}.")
         if node_name in self.active_connections:
@@ -86,38 +96,40 @@ class NodeService(rpyc.Service):
         logger.debug(
             f"Connection to {node_name} not memoized; attempting to access via registry."
         )
-        conn = rpyc.connect_by_service(node_name, service=self.class_object_reference())
-        self.active_connections[node_name] = conn.root
+        conn = rpyc.connect_by_service(
+            node_name, service=self, config=rpyc.core.protocol.DEFAULT_CONFIG  # type: ignore
+        )
+        self.active_connections[node_name] = conn
         logger.info(f"New connection to {node_name} established and memoized.")
         return self.active_connections[node_name]
 
-    @rpyc.exposed
-    def handshake(self, n_attempts: int = 10, wait_increase_factor: int | float = 1):
-        partners = self.partners.copy()
-        success = False
-        wait_time = 1
-        while n_attempts > 0:
-            for i in range(len(partners)-1, 0, -1):
-                try:
-                    self.get_connection(partners[i])
-                    partners.pop(i)
-                except DiscoveryError:
-                    continue
-            if not len(partners):
-                success = True
-                break
-            else:
-                n_attempts -= 1
-                wait_time *= wait_increase_factor
-            sleep(wait_time)
-
-        if not success:
-            raise HandshakeFailureException(f"Node {self.node_name} failed to handshake with {partners}")
+    def handshake(self):
+        logger.info(f"{self.node_name} starting handshake with partners {str(self.partners)}")
+        for p in self.partners:
+            logger.debug(f"{self.node_name} attempting to connect to {p}")
+            self.get_connection(p)
+        if all([(p in self.active_connections.keys()) for p in self.partners]):
+            logger.info(f"Successful handshake with {str(self.partners)}")
+        else:
+            straglers = [p for p in self.partners if p not in self.active_connections.keys()]
+            logger.info(f"Could not handshake with {str(straglers)}")
 
     @rpyc.exposed
     def get_ready(self):
+        get_ready_thd = threading.Thread(target=self._get_ready, daemon=True)
+        get_ready_thd.start()
+
+    def _get_ready(self):
         self.handshake()
         self.status = "ready"
+
+    @rpyc.exposed
+    def run(self):
+        run_thd = threading.Thread(target=self._run, daemon=True)
+        run_thd.start()
+
+    def _run(self):
+        raise NotImplementedError
 
     @rpyc.exposed
     def get_status(self) -> str:
@@ -152,17 +164,26 @@ class ObserverService(NodeService):
         self.playbook = playbook
         logger.info("Finished initializing ObserverService object.")
 
-    @rpyc.exposed
-    def get_ready(self):
+    def delegate(self):
+        logger.info(f"Delegating tasks.")
+        for partner, tasklist in self.playbook.items():
+            pnode = self.get_connection(partner) 
+            for task in tasklist:
+                logger.debug(f"Giving {str(type(task))} to {partner}")
+                pnode.root.give_task(task)
+
+    def _get_ready(self):
+        logger.info("Making sure all participants are ready.")
         for partner in self.partners:
-            node = self.get_connection(partner)
+            node = self.get_connection(partner).root
             node.get_ready()
 
         success = False
         n_attempts = 10
         while n_attempts > 0:
-            if all([(self.get_connection(p).get_status() == "ready") for p in self.partners]):
+            if all([(self.get_connection(p).root.get_status() == "ready") for p in self.partners]):
                 success = True
+                logger.info("All participants are ready!")
                 break
             n_attempts -= 1
             sleep(1)
@@ -170,17 +191,13 @@ class ObserverService(NodeService):
         if not success:
             straglers = [
                 p for p in self.partners
-                if self.get_connection(p).get_status() != "ready"
+                if self.get_connection(p).root.get_status() != "ready"
             ]
             raise AwaitParticipantException(f"Observer had to wait too long for nodes {straglers}")
 
-    @rpyc.exposed
-    def delegate(self):
-        for partner, tasklist in self.playbook.items():
-            pnode = self.get_connection(partner) 
-            assert isinstance(pnode, ParticipantService)
-            for task in tasklist:
-                pnode.give_task(task)
+        self.delegate()
+        self.status = "ready"
+
 
     @rpyc.exposed
     def get_master_dict(self) -> MasterDict:
@@ -195,16 +212,18 @@ class ObserverService(NodeService):
         dataset = getattr(module, dataset_instance)
         return dataset
 
-    @rpyc.exposed
-    def run(self):
+    def _run(self):
         assert self.status == "ready"
-        for partner in self.partners:
-            pnode = self.get_connection(partner)
-            assert isinstance(pnode, ParticipantService)
-            pnode.run()
+        for p in self.partners:
+            self.get_connection(p).root.run()
         self.status = "waiting"
-        while any([(self.get_connection(p).get_status() != "finished" for p in self.partners)]):
+
+        while True:
+            if all([(self.get_connection(p).root.get_status() == "finished") for p in self.partners]):
+                logger.info("All nodes have finished!")
+                break
             sleep(5)
+
         self.on_finish()
 
     def on_finish(self):
@@ -242,8 +261,8 @@ class ParticipantService(NodeService):
 
     @rpyc.exposed
     def prepare_model(self):
-        observer_svc = self.get_connection("OBSERVER")
-        assert isinstance(observer_svc, ObserverService)
+        logger.info("Preparing model.")
+        observer_svc = self.get_connection("OBSERVER").root
         master_dict = observer_svc.get_master_dict()
         if not isinstance(self.ModelCls, nn.Module):
             self.model = WrappedModel(master_dict=master_dict)
@@ -252,10 +271,10 @@ class ParticipantService(NodeService):
 
     @rpyc.exposed
     def give_task(self, task: tasks.Task):
+        logger.info(f"Accepting {task.__class__} to inbox.")
         self.inbox.put(task)
 
-    @rpyc.exposed
-    def run(self):
+    def _run(self):
         assert self.status == "ready"
         self.status = "running"
         if self.inbox is not None:
@@ -265,6 +284,7 @@ class ParticipantService(NodeService):
 
     @rpyc.exposed
     def get_ready(self):
+        logger.info("Getting ready.")
         self.handshake()
         self.prepare_model()
         self.status = "ready"
@@ -285,24 +305,29 @@ class ParticipantService(NodeService):
         """
         self.done_event = done_event
 
-    def process(self, task: tasks.Task):
-        task_class = type(task)
+    def process(self, task):
+        """
+        It is important to note that the task will be a netref to the actual task, so we use
+        the _rpyc_getattr method to figure out the true underlying type of the task.
+        """
+        task_class = task.__class__
         corresponding_method = self.task_map[task_class]
         corresponding_method(task)
 
-    def on_finish(self):
+    def on_finish(self, task):
         assert self.inbox.empty()
         self.status = "finished"
 
     def simple_inference(self, task: tasks.SimpleInferenceTask):
         assert self.model is not None
         inference_id = task.inference_id if task.inference_id is not None else str(uuid.uuid4())
+        logger.info(f"Running simple inference on layers {str(task.start_layer)} through {str(task.end_layer)}")
         out = self.model.forward(
-            task.input, inference_id=inference_id, start=task.start_layer, end=task.end_layer
+            obtain(task.input), inference_id=inference_id, start=task.start_layer, end=task.end_layer
         )
  
         if task.downstream_node is not None and isinstance(task.end_layer, int):
-            downstream_node_svc = self.get_connection(task.downstream_node)
+            downstream_node_svc = self.get_connection(task.downstream_node).root
             assert isinstance(downstream_node_svc, ParticipantService)
             downstream_task = tasks.SimpleInferenceTask(
                 self.node_name, out, inference_id=inference_id, start_layer=task.end_layer
@@ -324,12 +349,10 @@ class ParticipantService(NodeService):
         Run the self.inference_sequence_per_input method for each element in the dataset.
         """
         dataset_module, dataset_instance = task.dataset_module, task.dataset_instance
-        observer_svc = self.get_connection("OBSERVER")
-        assert isinstance(observer_svc, ObserverService)
+        observer_svc = self.get_connection("OBSERVER").root
         dataset = observer_svc.get_dataset_reference(dataset_module, dataset_instance)
-        dataloader = DataLoader(dataset, batch_size=1)
-
-        for input in dataloader:
+        for idx in range(len(dataset)):
+            input, _ = obtain(dataset[idx])
             subtask = tasks.SingleInputInferenceTask(input, from_node="SELF")
             self.inference_sequence_per_input(subtask)
 

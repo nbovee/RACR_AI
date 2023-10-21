@@ -6,7 +6,6 @@ from torch import Tensor
 from dataclasses import dataclass, field
 
 
-@dataclass(order=True)
 class Task:
     """
     Each participating node has an attribute named "inbox", which is a PriorityQueue of Task
@@ -25,6 +24,24 @@ class Task:
     def __init__(self, from_node: str, priority: int = 5):
         self.priority = priority
         self.from_node = from_node
+
+    def __lt__(self, obj):
+        return self.priority < obj.priority
+
+    def __le__(self, obj):
+        return self.priority <= obj.priority
+
+    def __eq__(self, obj):
+        return self.priority == obj.priority
+
+    def __ne__(self, obj):
+        return self.priority != obj.priority
+
+    def __gt__(self, obj):
+        return self.priority > obj.priority
+
+    def __ge__(self, obj):
+        return self.priority >= obj.priority
 
 
 class SimpleInferenceTask(Task):

@@ -8,7 +8,6 @@ We also define a subclass of BaseDelegator to run the observer node.
 """
 
 import uuid
-from src.experiment_design.partitioners.partitioner import Partitioner
 from src.experiment_design.node_behavior.base import ParticipantService
 import src.experiment_design.tasks.tasks as tasks
 
@@ -32,38 +31,35 @@ class ClientService(ParticipantService):
     calls `inference_sequence_per_input` repeatedly, we don't have to change it directly.
     """
 
-    DOWNSTREAM_PARTNER = "EDGE"
+    DOWNSTREAM_PARTNER = "EDGE1"
     ALIASES: list[str] = ["CLIENT", "PARTICIPANT"]
 
-    partners: list[str] = ["OBSERVER", "EDGE"]
-    classname: str = "ClientService"
+    partners: list[str] = ["OBSERVER", "EDGE1"]
 
     def inference_sequence_per_input(self, task: tasks.SingleInputInferenceTask):
         assert self.model is not None
         input = task.input
-        inference_id = task.inference_id if task.inference_id is not None else str(uuid.uuid4())
         splittable_layer_count = self.model.splittable_layer_count
-        partitioner = Partitioner.create("cycle", splittable_layer_count)
 
-        current_split_layer = 0
+        current_split_layer = 1
         while current_split_layer < splittable_layer_count:
-            current_split_layer = partitioner()
+            inference_id = str(uuid.uuid4())
             start, end = 0, current_split_layer
             out = self.model.forward(
                 input, inference_id, start=start, end=end, by_node=self.node_name
             )
             downstream_task = tasks.SimpleInferenceTask(
-                self.node_name, out, inference_id, start_layer=end+1
+                self.node_name, out, inference_id, start_layer=end
             )
-            downstream_partner = self.get_connection(self.DOWNSTREAM_PARTNER)
-            assert isinstance(downstream_partner, ParticipantService)
+            downstream_partner = self.get_connection(self.DOWNSTREAM_PARTNER).root
             downstream_partner.give_task(downstream_task)
+            current_split_layer += 1
 
-    def on_finish(self):
+    def on_finish(self, task):
         downstream_finish_signal = tasks.FinishSignalTask(self.node_name)
-        downstream_partner = self.get_connection(self.DOWNSTREAM_PARTNER)
-        assert isinstance(downstream_partner, ParticipantService)
+        downstream_partner = self.get_connection(self.DOWNSTREAM_PARTNER).root
         downstream_partner.give_task(downstream_finish_signal)
+        self.status = "finished"
 
 
 class EdgeService(ParticipantService):
@@ -74,7 +70,6 @@ class EdgeService(ParticipantService):
     perform its inference. All we need to do is overwrite the list of partners it will handshake
     with during setup.
     """
-    ALIASES: list[str] = ["EDGE", "PARTICIPANT"]
-    partners: list[str] = ["OBSERVER", "CLIENT"]
-    classname: str = "EdgeService"
+    ALIASES: list[str] = ["EDGE1", "PARTICIPANT"]
+    partners: list[str] = ["OBSERVER", "CLIENT1"]
 
