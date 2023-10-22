@@ -151,6 +151,11 @@ class WrappedModel(nn.Module):
 
         def pre_hook(module, input):
             assert self.current_module_index is not None and self.current_module_start_index is not None
+            if (self.current_module_stop_index is not None and
+                layer_index >= self.current_module_stop_index and 
+                layer_index < self.max_ignore_layer_index
+            ): # exit at the start of the layer to complete, in order to catch modifications to the input from non-Modules
+                raise HookExitException(input)
             if self.log and (self.current_module_index >= self.current_module_start_index):
                 self.forward_dict[layer_index]['inference_time'] = -self.timer()
             # store input until the correct layer arrives
@@ -172,11 +177,6 @@ class WrappedModel(nn.Module):
             assert self.current_module_index is not None and self.current_module_start_index is not None
             if self.log and self.current_module_index >= self.current_module_start_index:
                 self.forward_dict[layer_index]['inference_time'] += self.timer()
-            if (self.current_module_stop_index is not None and
-                layer_index >= self.current_module_stop_index - 1 and 
-                layer_index < self.max_ignore_layer_index - 1
-            ):
-                raise HookExitException(output)
             self.current_module_index += 1
             # print(f"stop at layer: {self.current_module_stop_index -1}")
             # print(f"L{layer_index}-{layer_name} returned.")
