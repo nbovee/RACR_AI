@@ -6,10 +6,14 @@ then passes the intermediary data off to a nearby edge server for completion.
 
 We also define a subclass of BaseDelegator to run the observer node.
 """
-
+import logging
 import uuid
+
 from src.experiment_design.node_behavior.base import ParticipantService
 import src.experiment_design.tasks.tasks as tasks
+
+
+logger = logging.getLogger("tracr_logger")
 
 
 class ClientService(ParticipantService):
@@ -46,8 +50,8 @@ class ClientService(ParticipantService):
         while current_split_layer < splittable_layer_count:
             inference_id = str(uuid.uuid4())
             start, end = 0, current_split_layer
-            # TODO: just call model
-            out = self.model.forward(
+            logger.info(f"running split inference from layers {start} to {end}")
+            out = self.model(
                 input, inference_id, start=start, end=end, by_node=self.node_name
             )
             downstream_task = tasks.SimpleInferenceTask(
