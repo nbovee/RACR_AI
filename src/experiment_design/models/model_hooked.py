@@ -160,7 +160,7 @@ class WrappedModel(nn.Module):
                 self.forward_dict[layer_index]['inference_time'] = -self.timer()
             # store input until the correct layer arrives
             if self.current_module_index == 0 and self.current_module_start_index > 0:
-                self.banked_input = copy.deepcopy(input)
+                self.banked_input = copy.deepcopy(*input)
                 return torch.randn(1, *self.base_input_size)
             # swap correct input back in now that we are at the right layer
             elif self.banked_input is not None and self.current_module_index == self.current_module_start_index:
