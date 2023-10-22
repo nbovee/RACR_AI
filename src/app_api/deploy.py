@@ -55,7 +55,9 @@ class LoggerWriter:
     def write(self, msg):
         if msg.endswith('\n'):
             self.buf.append(msg.removesuffix('\n'))
-            self.logfct(''.join(self.buf))
+            output = ''.join(self.buf)
+            if output:
+                self.logfct(output)
             self.buf = []
         else:
             self.buf.append(msg)

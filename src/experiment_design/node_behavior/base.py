@@ -1,4 +1,5 @@
 from __future__ import annotations
+import atexit
 import logging
 import logging
 import sys
@@ -9,10 +10,10 @@ import asyncio
 import rpyc.core.protocol
 from rpyc.utils.classic import obtain
 import torch.nn as nn
-from typing import Any, Type
+from typing import Any, Type, Union
 from queue import PriorityQueue
 from importlib import import_module
-from rpyc.core.protocol import Connection
+from rpyc.core.protocol import Connection, PingError
 from time import sleep
 from typing import Callable
 from rpyc.utils.factory import DiscoveryError
@@ -82,11 +83,20 @@ class NodeService(rpyc.Service):
 
     def on_disconnect(self, conn: Connection):
         logger.info("on_disconnect method called; removing saved connection.")
-        for name in self.active_connections:
-            if self.active_connections[name] == conn:
-                self.active_connections.pop(name)
-                logger.info(f"Removed connection to {name}")
-                return
+        closed = []
+        active_conns = self.active_connections.copy()
+        for name in active_conns:
+            c = active_conns[name]
+            if c.closed:
+                closed.append(name)
+                logger.debug(f"Connection to {name} is closed")
+                continue
+        for dead_connection in closed:
+            try:
+                self.active_connections.pop(dead_connection)
+                logger.info(f"Removed connection to {dead_connection} (connection closed)")
+            except KeyError:
+                pass
 
     def get_connection(self, node_name: str):
         node_name = node_name.upper().strip()
@@ -167,6 +177,7 @@ class ObserverService(NodeService):
         self.partners = partners
         self.master_dict = MasterDict()
         self.playbook = playbook
+        atexit.register(self.close_participants)
         logger.info("Finished initializing ObserverService object.")
 
     def delegate(self):
@@ -233,6 +244,16 @@ class ObserverService(NodeService):
     def on_finish(self):
         self.status = "finished"
 
+    def close_participants(self):
+        for p in self.partners:
+            logger.info(f"sending self-destruct signal to {p}")
+            try:
+                node = self.get_connection(p).root
+                node.self_destruct()
+                logger.info(f"{p} self-destructed successfully")
+            except (DiscoveryError, EOFError, TimeoutError):
+                logger.info(f"{p} was already shut down")
+
 
 @rpyc.service
 class ParticipantService(NodeService):
@@ -249,12 +270,12 @@ class ParticipantService(NodeService):
     model: WrappedModel
     inbox: PriorityQueue[tasks.Task] = PriorityQueue()
     task_map: dict[type, Callable]
-    done_event: threading.Event | None
+    done_event: Union[threading.Event, None]
     high_priority_lock: threading.Condition = threading.Condition()
     mid_priority_lock: threading.Condition = threading.Condition()
 
     def __init__(self,
-                 ModelCls: Type[nn.Module] | None,
+                 ModelCls: Union[Type[nn.Module], None],
                  ):
         super().__init__()
         self.ModelCls = ModelCls
@@ -292,9 +313,6 @@ class ParticipantService(NodeService):
         self.status = "running"
         if self.inbox is not None:
             while self.status == "running":
-                if self.inbox.empty():
-                    sleep(5)
-                    continue
                 current_task = self.inbox.get()
                 self.process(current_task)
 
@@ -337,7 +355,7 @@ class ParticipantService(NodeService):
         assert self.model is not None
         inference_id = task.inference_id if task.inference_id is not None else str(uuid.uuid4())
         logger.info(f"Running simple inference on layers {str(task.start_layer)} through {str(task.end_layer)}")
-        out = self.model.forward(
+        out = self.model(
             task.input, inference_id=inference_id, start=task.start_layer, end=task.end_layer
         )
  

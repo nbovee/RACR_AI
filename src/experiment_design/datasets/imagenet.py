@@ -55,6 +55,7 @@ class ImagenetDataset(BaseDataset):
         label = self.img_labels[idx]
         img_fp = self.img_map[label]
         image = Image.open(img_fp).convert("RGB")
+        image = image.resize((224, 224))
 
         if self.transform:
             image = self.transform(image)
@@ -78,4 +79,8 @@ imagenet10_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTenso
 
 # And here's the sad little dataset I've been using for tests
 imagenet1_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor()]), max_iter=1)
+
+
+if __name__ == "__main__":
+    print(f"Output size: {imagenet1_tr[0][0].shape}")  # type: ignore
 
