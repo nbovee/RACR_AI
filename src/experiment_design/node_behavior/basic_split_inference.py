@@ -47,7 +47,7 @@ class ClientService(ParticipantService):
         splittable_layer_count = self.model.splittable_layer_count
 
         current_split_layer = 1
-        while current_split_layer < splittable_layer_count:
+        while current_split_layer < splittable_layer_count - 1:
             inference_id = str(uuid.uuid4())
             start, end = 0, current_split_layer
             logger.info(f"running split inference from layers {start} to {end}")
