@@ -57,14 +57,12 @@ class ClientService(ParticipantService):
             downstream_task = tasks.SimpleInferenceTask(
                 self.node_name, out, inference_id, start_layer=end
             )
-            downstream_partner = self.get_connection(self.DOWNSTREAM_PARTNER).root
-            downstream_partner.give_task(downstream_task)
+            self.send_task(self.DOWNSTREAM_PARTNER, downstream_task)
             current_split_layer += 1
 
-    def on_finish(self, task):
+    def on_finish(self, _):
         downstream_finish_signal = tasks.FinishSignalTask(self.node_name)
-        downstream_partner = self.get_connection(self.DOWNSTREAM_PARTNER).root
-        downstream_partner.give_task(downstream_finish_signal)
+        self.send_task(self.DOWNSTREAM_PARTNER, downstream_finish_signal)
         self.status = "finished"
 
 

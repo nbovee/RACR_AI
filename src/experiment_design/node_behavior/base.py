@@ -2,13 +2,12 @@ from __future__ import annotations
 import atexit
 import logging
 import logging
-import sys
 import threading
 import uuid
 import rpyc
-import asyncio
 import rpyc.core.protocol
-from rpyc.utils.classic import obtain
+from rpyc.utils.classic import obtain, deliver
+from rpyc.lib.compat import pickle
 import torch.nn as nn
 from typing import Any, Type, Union
 from queue import PriorityQueue
@@ -53,11 +52,13 @@ class NodeService(rpyc.Service):
     """
     ALIASES: list[str]
 
-    active_connections: dict[str, Any]
+    active_connections: dict[str, Union[Connection, None]]
     node_name: str
     status: str
     partners: list[str]
     classname: str = "NodeService"
+    threadlock: threading.RLock = threading.RLock()
+    inbox: PriorityQueue[tasks.Task] = PriorityQueue()
 
     def __init__(self):
         super().__init__()
@@ -65,52 +66,47 @@ class NodeService(rpyc.Service):
         self.node_name = self.ALIASES[0].upper().strip()
         self.active_connections = {}
 
-    def class_object_reference(self):
-        return getattr(sys.modules[__name__], self.classname)
-
     def on_connect(self, conn: Connection):
-        assert conn.root is not None
-        conn._config["sync_request_timeout"] = 60
-
-        try:
-            node_name = conn.root.get_node_name()
-        except AttributeError:
-            # must be the VoidService exposed by the Experiment object, not another NodeService
-            node_name = "APP.PY"
-
-        self.active_connections[node_name] = conn
-        return
-
-    def on_disconnect(self, conn: Connection):
-        logger.info("on_disconnect method called; removing saved connection.")
-        closed = []
-        active_conns = self.active_connections.copy()
-        for name in active_conns:
-            c = active_conns[name]
-            if c.closed:
-                closed.append(name)
-                logger.debug(f"Connection to {name} is closed")
-                continue
-        for dead_connection in closed:
+        with self.threadlock:
+            assert conn.root is not None
             try:
-                self.active_connections.pop(dead_connection)
-                logger.info(f"Removed connection to {dead_connection} (connection closed)")
-            except KeyError:
-                pass
+                node_name = conn.root.get_node_name()
+            except AttributeError:
+                # must be the VoidService exposed by the Experiment object, not another NodeService
+                node_name = "APP.PY"
+            logger.debug(f"Received connection from {node_name}. Adding to saved connections.")
+            self.active_connections[node_name] = conn
 
-    def get_connection(self, node_name: str):
-        node_name = node_name.upper().strip()
-        if node_name in self.active_connections:
-            logger.debug(f"using saved connection to {node_name}")
-            return self.active_connections[node_name]
-        logger.debug(f"attempting to connect to {node_name} via registry.")
-        conn = rpyc.connect_by_service(
-            node_name, service=self, config=rpyc.core.protocol.DEFAULT_CONFIG  # type: ignore
-        )
-        conn._config["sync_request_timeout"] = 60
-        self.active_connections[node_name] = conn
-        logger.info(f"new connection to {node_name} established and saved.")
-        return self.active_connections[node_name]
+    def on_disconnect(self, _):
+        with self.threadlock:
+            logger.info("on_disconnect method called; removing saved connection.")
+            for name in self.active_connections:
+                c = self.active_connections[name]
+                if c is None:
+                    continue
+                try:
+                    c.ping()
+                    logger.debug(f"successfully pinged {name} - keeping connection")
+                except (PingError, EOFError, TimeoutError):
+                    self.active_connections[name] = None
+                    logger.warning(f"failed to ping {name} - removed connection")
+
+    def get_connection(self, node_name: str) -> Connection:
+        with self.threadlock:
+            node_name = node_name.upper().strip()
+            result = self.active_connections.get(node_name, None)
+            if result is not None:
+                logger.debug(f"using saved connection to {node_name}")
+                return result
+            logger.debug(f"attempting to connect to {node_name} via registry.")
+            conn = rpyc.connect_by_service(
+                node_name, service=self, config=rpyc.core.protocol.DEFAULT_CONFIG  # type: ignore
+            )
+            self.active_connections[node_name] = conn
+            logger.info(f"new connection to {node_name} established and saved.")
+            result = self.active_connections[node_name]
+            assert result is not None
+            return result
 
     def handshake(self):
         logger.info(f"{self.node_name} starting handshake with partners {str(self.partners)}")
@@ -123,11 +119,31 @@ class NodeService(rpyc.Service):
                 except DiscoveryError:
                     sleep(1)
                     continue
-        if all([(p in self.active_connections.keys()) for p in self.partners]):
+        if all([(self.active_connections.get(p, None) is not None) for p in self.partners]):
             logger.info(f"Successful handshake with {str(self.partners)}")
         else:
-            straglers = [p for p in self.partners if p not in self.active_connections.keys()]
+            straglers = [p for p in self.partners if self.active_connections.get(p, None) is None]
             logger.info(f"Could not handshake with {str(straglers)}")
+
+    def send_task(self, node_name: str, task: tasks.Task):
+        logger.info(f"sending {task.task_type} to {node_name}")
+        pickled_task = bytes(pickle.dumps(task))
+        conn = self.get_connection(node_name)
+        assert conn.root is not None
+        conn.root.accept_task(pickled_task)
+
+    @rpyc.exposed
+    def accept_task(self, pickled_task: bytes):
+        logger.debug("unpickling received task")
+        task = pickle.loads(pickled_task)
+        logger.debug(f"successfully unpacked {task.task_type}")
+        accept_task_thd = threading.Thread(target=self._accept_task, args=[task], daemon=True)
+        accept_task_thd.start()
+
+    def _accept_task(self, task: tasks.Task):
+        logger.info(f"saving {task.task_type} to inbox in thread")
+        self.inbox.put(task)
+        logger.info(f"{task.task_type} saved to inbox successfully")
 
     @rpyc.exposed
     def get_ready(self):
@@ -183,21 +199,20 @@ class ObserverService(NodeService):
     def delegate(self):
         logger.info(f"Delegating tasks.")
         for partner, tasklist in self.playbook.items():
-            pnode = self.get_connection(partner) 
             for task in tasklist:
-                logger.debug(f"Giving {str(type(task))} to {partner}")
-                pnode.root.give_task(task)
+                self.send_task(partner, task)
 
     def _get_ready(self):
         logger.info("Making sure all participants are ready.")
         for partner in self.partners:
             node = self.get_connection(partner).root
+            assert node is not None
             node.get_ready()
 
         success = False
         n_attempts = 10
         while n_attempts > 0:
-            if all([(self.get_connection(p).root.get_status() == "ready") for p in self.partners]):
+            if all([(self.get_connection(p).root.get_status() == "ready") for p in self.partners]):  # type: ignore
                 success = True
                 logger.info("All participants are ready!")
                 break
@@ -207,7 +222,7 @@ class ObserverService(NodeService):
         if not success:
             straglers = [
                 p for p in self.partners
-                if self.get_connection(p).root.get_status() != "ready"
+                if self.get_connection(p).root.get_status() != "ready"  # type: ignore
             ]
             raise AwaitParticipantException(f"Observer had to wait too long for nodes {straglers}")
 
@@ -230,11 +245,13 @@ class ObserverService(NodeService):
     def _run(self):
         assert self.status == "ready"
         for p in self.partners:
-            self.get_connection(p).root.run()
+            pnode = self.get_connection(p)
+            assert pnode.root is not None
+            pnode.root.run()
         self.status = "waiting"
 
         while True:
-            if all([(self.get_connection(p).root.get_status() == "finished") for p in self.partners]):
+            if all([(self.get_connection(p).root.get_status() == "finished") for p in self.partners]):  # type: ignore
                 logger.info("All nodes have finished!")
                 break
             sleep(5)
@@ -249,6 +266,7 @@ class ObserverService(NodeService):
             logger.info(f"sending self-destruct signal to {p}")
             try:
                 node = self.get_connection(p).root
+                assert node is not None
                 node.self_destruct()
                 logger.info(f"{p} self-destructed successfully")
             except (DiscoveryError, EOFError, TimeoutError):
@@ -268,7 +286,6 @@ class ParticipantService(NodeService):
     ALIASES = ["PARTICIPANT"]
 
     model: WrappedModel
-    inbox: PriorityQueue[tasks.Task] = PriorityQueue()
     task_map: dict[type, Callable]
     done_event: Union[threading.Event, None]
     high_priority_lock: threading.Condition = threading.Condition()
@@ -290,23 +307,12 @@ class ParticipantService(NodeService):
     def prepare_model(self):
         logger.info("Preparing model.")
         observer_svc = self.get_connection("OBSERVER").root
+        assert observer_svc is not None
         master_dict = observer_svc.get_master_dict()
         if not isinstance(self.ModelCls, nn.Module):
             self.model = WrappedModel(master_dict=master_dict)
         else:
             self.model = WrappedModel(pretrained=self.ModelCls(), master_dict=master_dict)
-
-    @rpyc.exposed
-    def give_task(self, task: tasks.Task):
-        logger.info(f"Receiving {task.__class__}.")
-        accept_task_thd = threading.Thread(target=self._accept_task, args=[task], daemon=True)
-        accept_task_thd.start()
-        return
-
-    def _accept_task(self, task):
-        logger.info(f"Accepting {task.__class__} to inbox in thread.")
-        task = obtain(task)
-        self.inbox.put(task)
 
     def _run(self):
         assert self.status == "ready"
@@ -338,7 +344,7 @@ class ParticipantService(NodeService):
         """
         self.done_event = done_event
 
-    def process(self, task):
+    def process(self, task: tasks.Task):
         """
         It is important to note that the task will be a netref to the actual task, so we use
         the _rpyc_getattr method to figure out the true underlying type of the task.
@@ -360,12 +366,10 @@ class ParticipantService(NodeService):
         )
  
         if task.downstream_node is not None and isinstance(task.end_layer, int):
-            downstream_node_svc = self.get_connection(task.downstream_node).root
-            assert isinstance(downstream_node_svc, ParticipantService)
             downstream_task = tasks.SimpleInferenceTask(
                 self.node_name, out, inference_id=inference_id, start_layer=task.end_layer
             )
-            downstream_node_svc.give_task(downstream_task)
+            self.send_task(task.downstream_node, downstream_task)
 
     def inference_sequence_per_input(self, task: tasks.SingleInputInferenceTask):
         """
@@ -383,6 +387,7 @@ class ParticipantService(NodeService):
         """
         dataset_module, dataset_instance = task.dataset_module, task.dataset_instance
         observer_svc = self.get_connection("OBSERVER").root
+        assert observer_svc is not None
         dataset = observer_svc.get_dataset_reference(dataset_module, dataset_instance)
         for idx in range(len(dataset)):
             input, _ = obtain(dataset[idx])

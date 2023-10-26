@@ -101,8 +101,11 @@ class LogRecordStreamHandler(socketserver.StreamRequestHandler):
                 break
             length = struct.unpack(">L", chunk)[0]
             chunk = self.connection.recv(length)
-            record = logging.makeLogRecord(pickle.loads(chunk))
-            logger.handle(record)
+            try:
+                record = logging.makeLogRecord(pickle.loads(chunk))
+                logger.handle(record)
+            except pickle.UnpicklingError:
+                pass
 
 
 class ConsoleHandler(logging.StreamHandler):
