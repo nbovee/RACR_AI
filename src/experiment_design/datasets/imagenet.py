@@ -78,9 +78,9 @@ imagenet999_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTens
 imagenet10_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor()]), max_iter=10)
 
 # And here's the sad little dataset I've been using for tests
-imagenet1_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor()]), max_iter=1)
+imagenet2_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor()]), max_iter=2)
 
 
 if __name__ == "__main__":
-    print(f"Output size: {imagenet1_tr[0][0].shape}")  # type: ignore
+    print(f"Output size: {imagenet2_tr[0][0].shape}")  # type: ignore
 
