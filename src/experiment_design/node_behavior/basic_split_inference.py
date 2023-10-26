@@ -52,10 +52,10 @@ class ClientService(ParticipantService):
             start, end = 0, current_split_layer
             logger.info(f"running split inference from layers {start} to {end}")
             out = self.model(
-                input, inference_id, start=start, end=end, by_node=self.node_name
+                input, inference_id, start=start, end=end
             )
             downstream_task = tasks.SimpleInferenceTask(
-                self.node_name, out, inference_id, start_layer=end
+                self.node_name, out, inference_id=inference_id, start_layer=end
             )
             self.send_task(self.DOWNSTREAM_PARTNER, downstream_task)
             current_split_layer += 1
@@ -63,7 +63,7 @@ class ClientService(ParticipantService):
     def on_finish(self, _):
         downstream_finish_signal = tasks.FinishSignalTask(self.node_name)
         self.send_task(self.DOWNSTREAM_PARTNER, downstream_finish_signal)
-        self.status = "finished"
+        super().on_finish(_)
 
 
 class EdgeService(ParticipantService):
