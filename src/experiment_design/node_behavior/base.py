@@ -251,7 +251,7 @@ class ObserverService(NodeService):
         dataset = getattr(module, dataset_instance)
         return dataset
 
-    def _run(self):
+    def _run(self, check_node_status_interval: int = 30):
         assert self.status == "ready"
         for p in self.partners:
             pnode = self.get_connection(p)
@@ -263,7 +263,7 @@ class ObserverService(NodeService):
             if all([(self.get_connection(p).root.get_status() == "finished") for p in self.partners]):  # type: ignore
                 logger.info("All nodes have finished!")
                 break
-            sleep(10)
+            sleep(check_node_status_interval)
 
         self.on_finish()
 

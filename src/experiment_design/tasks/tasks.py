@@ -1,27 +1,46 @@
-import threading
+"""
+Each participating node has an attribute named "inbox", which is a PriorityQueue of Task objects.
+They are sorted by their "priority" attribute in ascending order (lowest first). When the `run`
+method is called on a node, it will begin dequeueing tasks from the inbox and processing them.
+The node will wait for new tasks to arrive if its inbox is empty. It will only stop when it
+processes a special type of task that tells the node it's done: the `FinishSignalTask` subclass.
+
+Any node can send any task to any participant at any time; the Observer node delegates tasks from
+the playbook to begin the experiment, but it's also common for participant nodes to send tasks to
+their fellow participants during the experiment.
+
+Each participant service has a method corresponding to each type of task it expects to see in
+its inbox. The node's `task_map` attribute shows which is paired with which. To create custom
+nodes with user-defined behavior, a user creates a subclass of ParticipantService and overrides
+the methods corresponding to the tasks it will receive during the experiment.
+
+For added flexibility, the user may also create their own custom subclasses of `Task` to introduce
+new types of actions available to their participants. As long as the participant nodes have an 
+entry for this type of task in their `task_map` attribute, they will be able to process it.
+"""
+
+
 import uuid
 import numpy as np
 from typing import Any, Union
-from PIL import Image
-from torch import Tensor
-from dataclasses import dataclass, field
 
 
 class Task:
     """
-    Each participating node has an attribute named "inbox", which is a PriorityQueue of Task
-    objects. They are sorted by their "priority" attribute in ascending order (lowest first).
-    When the "start" method is called on a node, its runner will begin popping tasks from the
-    inbox. The runner has a method corresponding to each type of task it expects to see in its
-    inbox. The `task_map` attribute shows which is paired with which.
+    The base class for all task types. Implements two important components required for task 
+    objects to work properly:
+        1.) Required attributes
+            * `from_node`: the node that sent the task 
+            * `task_type`: a string representation of the class name
+            * `priority`: used to prioritize tasks in the inbox (lower values are first in line)
+        2.) Dunder methods for prioritization in the inbox
 
-    The runner will wait for new tasks to arrive if its inbox is empty. The node will only stop
-    when its runner processes a `FinishSignalTask` object.
+    This class is not meant to be used itself, but subclassed.
     """
 
-    from_node: str = field(compare=False)
-    priority: int = 5    # from 1 to 10
+    from_node: str
     task_type: str
+    priority: int = 5    # from 1 to 10 (or 11 for FinishSignalTask)
 
     def __init__(self, from_node: str, priority: int = 5):
         self.priority = priority
@@ -33,12 +52,6 @@ class Task:
 
     def __le__(self, obj):
         return self.priority <= obj.priority
-
-    def __eq__(self, obj):
-        return self.priority == obj.priority
-
-    def __ne__(self, obj):
-        return self.priority != obj.priority
 
     def __gt__(self, obj):
         return self.priority > obj.priority
@@ -77,7 +90,8 @@ class SimpleInferenceTask(Task):
         self.start_layer = start_layer
         self.end_layer = end_layer
         self.downstream_node = downstream_node
-        if self.start_layer == 0 and inference_id is None:
+        self.inference_id = inference_id
+        if self.start_layer == 0 and self.inference_id is None:
             self.inference_id = str(uuid.uuid4())
 
 
@@ -120,9 +134,9 @@ class InferOverDatasetTask(Task):
     `get_dataset_reference` method. Use your `inference_sequence_per_input` method for each input 
     in the dataset.'
 
-    The node's runner will use its `infer_dataset` method to build a torch DataLoader and iterate
-    over each instance in the dataset. This behavior is pretty general, so usually the user won't 
-    have to overwrite the `infer_dataset` method that comes with BaseRunner.
+    The node will use its `infer_dataset` method to build a torch DataLoader and iterate over each
+    instance in the dataset. This behavior is pretty general, so typically the user won't have to 
+    overwrite the `infer_dataset` method inherited from ParticipantService.
     """
 
     priority: int = 5
@@ -142,7 +156,10 @@ class InferOverDatasetTask(Task):
 class FinishSignalTask(Task):
     """
     Sort of like a sentry value that lets a Runnner know when it's done. Priority is set to an 
-    abnormally high value to ensure it's always processed last.
+    abnormally high value to ensure it's always processed last, but this does not mean the node
+    will wait for new tasks to arrive if this is the last one left in the inbox. This should only
+    be sent once you are sure the receiving node has already collected its required tasks in its
+    inbox.
     """
 
     priority: int = 11

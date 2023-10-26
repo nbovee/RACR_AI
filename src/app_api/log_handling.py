@@ -64,7 +64,7 @@ class ColorByDeviceFormatter(logging.Formatter):
     COLORS: list[tuple[str, str]] = [
         ("orange_red1", "indian_red1"),
         ("cyan1", "cyan2"),
-        ("blue_violet", "purple3"),
+        ("plum2", "thistle3"),
         ("chartreuse3", "sea_green3"),
         ("gold1", "tan")
     ]
