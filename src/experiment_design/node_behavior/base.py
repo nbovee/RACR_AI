@@ -6,6 +6,7 @@ import threading
 import uuid
 import rpyc
 import rpyc.core.protocol
+from pandas import DataFrame
 from rpyc.utils.classic import obtain, deliver
 from rpyc.lib.compat import pickle
 import torch.nn as nn
@@ -130,7 +131,14 @@ class NodeService(rpyc.Service):
         pickled_task = bytes(pickle.dumps(task))
         conn = self.get_connection(node_name)
         assert conn.root is not None
-        conn.root.accept_task(pickled_task)
+        try:
+            conn.root.accept_task(pickled_task)
+        except TimeoutError:
+            conn.close()
+            self.active_connections[node_name] = None
+            conn = self.get_connection(node_name)
+            assert conn.root is not None
+            conn.root.accept_task(pickled_task)
 
     @rpyc.exposed
     def accept_task(self, pickled_task: bytes):
@@ -230,8 +238,9 @@ class ObserverService(NodeService):
         self.status = "ready"
 
     @rpyc.exposed
-    def get_master_dict(self) -> MasterDict:
-        return self.master_dict
+    def get_master_dict(self, as_dataframe: bool = False) -> Union[MasterDict, DataFrame]:
+        result = self.master_dict if not as_dataframe else self.master_dict.to_dataframe()
+        return result
 
     @rpyc.exposed
     def get_dataset_reference(self, dataset_module: str, dataset_instance: str) -> BaseDataset:
@@ -254,7 +263,7 @@ class ObserverService(NodeService):
             if all([(self.get_connection(p).root.get_status() == "finished") for p in self.partners]):  # type: ignore
                 logger.info("All nodes have finished!")
                 break
-            sleep(5)
+            sleep(10)
 
         self.on_finish()
 
@@ -310,9 +319,13 @@ class ParticipantService(NodeService):
         assert observer_svc is not None
         master_dict = observer_svc.get_master_dict()
         if not isinstance(self.ModelCls, nn.Module):
-            self.model = WrappedModel(master_dict=master_dict)
+            self.model = WrappedModel(
+                master_dict=master_dict, node_name=self.node_name
+            )
         else:
-            self.model = WrappedModel(pretrained=self.ModelCls(), master_dict=master_dict)
+            self.model = WrappedModel(
+                pretrained=self.ModelCls(), master_dict=master_dict, node_name=self.node_name
+            )
 
     def _run(self):
         assert self.status == "ready"
@@ -355,6 +368,7 @@ class ParticipantService(NodeService):
 
     def on_finish(self, task):
         assert self.inbox.empty()
+        self.model.update_master_dict()
         self.status = "finished"
 
     def simple_inference(self, task: tasks.SimpleInferenceTask):

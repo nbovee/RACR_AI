@@ -172,7 +172,14 @@ class Experiment:
         self.cleanup_after_finished()
 
     def start_registry(self) -> None:
-        atexit.register(self.registry_server.close)
+
+        def close_registry_gracefully():
+            try:
+                self.registry_server.close()
+            except ValueError:
+                pass
+
+        atexit.register(close_registry_gracefully)
         self.registry_server.start()
 
     def check_registry_server(self):
@@ -220,7 +227,7 @@ class Experiment:
         logger.info("Verifying required nodes are up.")
         service_names = self.manifest.get_participant_instance_names()
         service_names.append("OBSERVER")
-        n_attempts = 100
+        n_attempts = 10
         while n_attempts > 0:
             available_services = rpyc.list_services()
             if not n_attempts % 10:
@@ -229,7 +236,7 @@ class Experiment:
             if all([(s in available_services) for s in service_names]):
                 return
             n_attempts -= 1
-            sleep(2)
+            sleep(10)
         available_services = rpyc.list_services()
         assert isinstance(available_services, tuple)
         straglers = [s for s in service_names if s not in available_services]
@@ -257,14 +264,17 @@ class Experiment:
         while True:
             if self.observer_conn.get_status() == "finished":
                 break
-            sleep(2)
+            sleep(10)
 
-        master_dict = self.observer_conn.get_master_dict()
-        master_dict = master_dict.inner_dict
+        sleep(5)
+        async_md = rpyc.async_(self.observer_conn.get_master_dict)
+        master_dict_result = async_md(as_dataframe=True)
+        master_dict_result.wait()
+        report_dataframe = master_dict_result.value
         fn = f"{self.manifest.name}__{datetime.now().strftime('%Y-%m-%dT%H%M%S')}.pkl"
         fp = utils.get_repo_root() / "MyData" / "TestResults" / fn
         with open(fp, 'wb') as file:
-            pickle.dump(master_dict, file)  # type: ignore
+            pickle.dump(report_dataframe, file)  # type: ignore
 
         self.observer_node.close()
         self.registry_server.close()
@@ -272,5 +282,4 @@ class Experiment:
             p.close()
 
         sleep(1.5)
-        logger.info("Congratulations - your experiment has concluded successfully!")
 

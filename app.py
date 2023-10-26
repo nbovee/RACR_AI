@@ -10,12 +10,12 @@ the word "python".
 """
 
 import logging
-import threading
 logger = logging.getLogger("tracr_logger")
 
 import argparse
 from rich.console import Console
 from rich.table import Table
+from time import sleep
 
 from src.app_api import log_handling, utils
 from src.app_api.device_mgmt import DeviceMgr
@@ -159,6 +159,8 @@ def experiment_run(args):
     experiment.run()
 
     log_handling.shutdown_gracefully(rlog_server)
+    sleep(2)  # give the remaining remote logs a second to be displayed
+    logger.info("Congratulations! The experiment has concluded successfully.")
 
 def network(args):
     if args.d:

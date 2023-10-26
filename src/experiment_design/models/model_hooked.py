@@ -1,5 +1,6 @@
 from typing import Union
 import numpy as np
+import logging
 from PIL import Image
 import torch
 import torch.nn as nn
@@ -12,6 +13,9 @@ import copy
 from torchinfo import summary
 
 from src.experiment_design.records.master_dict import MasterDict
+
+
+logger = logging.getLogger("tracr_logger")
 
 
 class HookExitException(Exception):
@@ -39,17 +43,20 @@ class WrappedModel(nn.Module):
         "watts_used": None,
     }
 
-    def __init__(self, *args, master_dict: Union[MasterDict, None] = None, **kwargs):
+    def __init__(self, *args, master_dict: Union[MasterDict, None] = None, flush_buffer_size: int = 100, **kwargs):
         print(*args)
         super().__init__(*args)
         self.timer = time.perf_counter_ns
         self.master_dict = master_dict # this should be the externally accessible dict
+        self.io_buf_dict = {}
         self.inference_dict = {} # collation dict for the current partition of a given inference
         self.forward_dict = {} # dict for the results from the current forward pass
         self.device = kwargs.get("device", "cpu")
         self.mode = kwargs.get("mode","eval")
         self.hook_depth = kwargs.get("depth", np.inf)
         self.base_input_size = kwargs.get("image_size", (3, 224, 224))
+        self.node_name = kwargs.get("node_name", "unknown")
+        self.flush_buffer_size = flush_buffer_size
         atexit.register(self.safeClose)
         self.pretrained = kwargs.pop("pretrained", models.alexnet(pretrained=True))
         self.splittable_layer_count = 0
@@ -157,6 +164,7 @@ class WrappedModel(nn.Module):
             ): # exit at the start of the layer to complete, in order to catch modifications to the input from non-Modules
                 raise HookExitException(input)
             if self.log and (self.current_module_index >= self.current_module_start_index):
+                self.forward_dict[layer_index]["completed_by_node"] = self.node_name
                 self.forward_dict[layer_index]['inference_time'] = -self.timer()
             # store input until the correct layer arrives
             if self.current_module_index == 0 and self.current_module_start_index > 0:
@@ -183,13 +191,12 @@ class WrappedModel(nn.Module):
 
         return hook
 
-    def forward(self,
-                x,
+    def forward(self, x,
                 inference_id: Union[str, None] = None,
                 start: int = 0,
                 end: Union[int, float] = np.inf,
-                log: bool = True,
-                by_node: Union[str, None] = None) -> torch.Tensor:
+                log: bool = True
+                ):
         """Wraps the pretrained forward pass to utilize our slicing."""
         end = self.splittable_layer_count if end == np.inf else end
 
@@ -201,13 +208,7 @@ class WrappedModel(nn.Module):
 
         # prepare inference_id for storing results
         _inference_id = "unlogged" if inference_id is None else inference_id
-        if len(str(_inference_id).split(".")) > 1:
-            suffix = int(str(_inference_id).split(".")[-1]) + 1
-        else:
-            suffix = 0
-        _inference_id = str(str(_inference_id).split(".")[0])+f'.{suffix}'
         self.inference_dict['inference_id'] = _inference_id
-        self.inference_dict['completed_by_node'] = by_node if by_node else "unknown"
         print(f"{_inference_id} id beginning.")
         # actually run the forward pass
         try:
@@ -226,7 +227,9 @@ class WrappedModel(nn.Module):
         # process and clean dicts before leaving forward
         self.inference_dict['layer_information'] = self.forward_dict
         if log and self.master_dict:
-            self.master_dict[str(_inference_id).split(".")[0]] = copy.deepcopy(self.inference_dict) # only one deepcopy needed
+            self.io_buf_dict[str(_inference_id).split(".")[0]] = copy.deepcopy(self.inference_dict) # only one deepcopy needed
+            if len(self.io_buf_dict) >= self.flush_buffer_size:
+                self.update_master_dict()
         self.inference_dict = {}
         self.forward_dict = copy.deepcopy(self.empty_buffer_dict)
 
@@ -235,6 +238,15 @@ class WrappedModel(nn.Module):
         self.current_module_index = None
         print(f"{_inference_id} end.")
         return out
+
+    def update_master_dict(self):
+        logger.debug("WrappedModel.update_master_dict called")
+        if self.master_dict is not None and self.io_buf_dict:
+            logger.info("flushing IO buffer dict to MasterDict")
+            self.master_dict.update(self.io_buf_dict)
+            self.io_buf_dict = {}
+            return
+        logger.info("MasterDict not updated; either buffer is empty or MasterDict is None")
 
     def parse_input(self, input):
         """Checks if the input is appropriate at the given stage of the network. Does not yet check Tensor shapes for intermediate layers."""
