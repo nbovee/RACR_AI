@@ -1,14 +1,11 @@
-from io import BufferedReader
-from time import sleep
 from plumbum.machines.session import ShellSessionError
 import rpyc
 import logging
 import sys
-import subprocess
-from rpyc.utils.zerodeploy import DeployedServer
+from rpyc.utils.zerodeploy import DeployedServer, TimeoutExpired
 from rpyc.core.stream import SocketStream
 from plumbum.machines.remote import RemoteCommand
-from plumbum import local, CommandNotFound
+from plumbum import SshMachine, local, CommandNotFound
 from plumbum.path import copy
 from plumbum.commands.base import BoundCommand
 
@@ -165,9 +162,6 @@ finally:
 
 class ZeroDeployedServer(DeployedServer):
 
-    stdout: BufferedReader
-    stderr: BufferedReader
-
     def __init__(self,
                  device: dm.Device,
                  node_name: str,
@@ -178,6 +172,7 @@ class ZeroDeployedServer(DeployedServer):
                  timeout_s: int = 600):
         logger.debug( f"Constructing ZeroDeployedServer for {node_name}.")
         assert device.working_cparams is not None
+        self.name = device._name
         self.proc = None
         self.remote_machine = device.as_pb_sshmachine()
         self._tmpdir_ctx = None
@@ -249,10 +244,10 @@ class ZeroDeployedServer(DeployedServer):
                 cmd = self.remote_machine.python
 
         assert isinstance(cmd, RemoteCommand)
-        self.proc = cmd.popen(script, new_session=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        self.stdout, self.stderr = self.proc.stdout, self.proc.stdout
+        self.proc = cmd.popen(script, new_session=True)
 
     def _connect_sock(self):
+        assert isinstance(self.remote_machine, SshMachine)
         return SocketStream._connect(self.remote_machine.host, 18861)
 
     def __del__(self):
@@ -260,4 +255,36 @@ class ZeroDeployedServer(DeployedServer):
             super().__del__
         except (AttributeError, ShellSessionError):
             pass
+
+    def close(self, timeout=5):
+        if self.proc is not None:
+            try:
+                self.proc.terminate()
+                self.proc.communicate(timeout=timeout)
+            except TimeoutExpired:
+                self.proc.kill()
+                raise
+            except Exception:
+                pass
+            self.proc = None
+        if self.remote_machine is not None:
+            try:
+                self.remote_machine._session.proc.terminate()
+                self.remote_machine._session.proc.communicate(timeout=timeout)
+                self.remote_machine.close()
+            except TimeoutExpired:
+                self.remote_machine._session.proc.kill()
+                raise
+            except ShellSessionError:
+                logger.info(f"remote machine {self.name} has been closed")
+            except Exception:
+                pass
+            self.remote_machine = None
+        if self._tmpdir_ctx is not None:
+            try:
+                self._tmpdir_ctx.__exit__(None, None, None)
+            except Exception:
+                pass
+            self._tmpdir_ctx = None
+
 

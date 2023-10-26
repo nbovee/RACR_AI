@@ -260,13 +260,17 @@ class Experiment:
             sleep(2)
 
         master_dict = self.observer_conn.get_master_dict()
+        master_dict = master_dict.inner_dict
         fn = f"{self.manifest.name}__{datetime.now().strftime('%Y-%m-%dT%H%M%S')}.pkl"
         fp = utils.get_repo_root() / "MyData" / "TestResults" / fn
-        with open(fp, 'w') as file:
+        with open(fp, 'wb') as file:
             pickle.dump(master_dict, file)  # type: ignore
 
         self.observer_node.close()
         self.registry_server.close()
         for p in self.participant_nodes:
             p.close()
+
+        sleep(1.5)
+        logger.info("Congratulations - your experiment has concluded successfully!")
 

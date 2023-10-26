@@ -1,3 +1,4 @@
+import threading
 import uuid
 import numpy as np
 from typing import Any, Union
@@ -20,10 +21,12 @@ class Task:
 
     from_node: str = field(compare=False)
     priority: int = 5    # from 1 to 10
+    task_type: str
 
     def __init__(self, from_node: str, priority: int = 5):
         self.priority = priority
         self.from_node = from_node
+        self.task_type = self.__class__.__name__
 
     def __lt__(self, obj):
         return self.priority < obj.priority
