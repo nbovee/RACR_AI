@@ -251,7 +251,7 @@ class ObserverService(NodeService):
         dataset = getattr(module, dataset_instance)
         return dataset
 
-    def _run(self, check_node_status_interval: int = 30):
+    def _run(self, check_node_status_interval: int = 15):
         assert self.status == "ready"
         for p in self.partners:
             pnode = self.get_connection(p)

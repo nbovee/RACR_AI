@@ -43,6 +43,6 @@ playbook:
       # params have to match the required params exactly. check tasks.py.
       params:
         dataset_module: imagenet
-        dataset_instance: imagenet999_tr
+        dataset_instance: imagenet10_tr
       # the finish signal task requires no parameters
     - task_type: finish_signal
