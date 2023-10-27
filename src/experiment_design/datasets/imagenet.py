@@ -82,5 +82,5 @@ imagenet2_tr = ImagenetDataset(transform=transforms.Compose([transforms.ToTensor
 
 
 if __name__ == "__main__":
-    print(f"Output size: {imagenet2_tr[0][0].shape}")  # type: ignore
+    print(f"Output size: {imagenet2_tr[0][0].element_size() * imagenet2_tr[0][0].nelement()}")  # type: ignore
 

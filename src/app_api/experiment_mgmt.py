@@ -302,7 +302,7 @@ class Experiment:
 
         if summary:
             logger.info("summarizing report")
-            summary_cols = ["inference_id", "split_layer", "total_inference_time_ns"]
+            summary_cols = ["inference_id", "split_layer", "total_time_ns", "inf_time_client", "inf_time_edge", "transmission_latency_ns"]
             self.report_dataframe = self.report_dataframe[summary_cols].drop_duplicates().reset_index(drop=True)
 
         if format == "csv":

@@ -4,6 +4,9 @@ import pandas as pd
 from rpyc.utils.classic import obtain
 
 
+# TODO: fix all the hardcoding for edge1 and client1 - make it a generic initiator and receiver or something
+
+
 class MasterDict:
 
     def __init__(self):
@@ -35,22 +38,61 @@ class MasterDict:
             for inference_id, layer_data in new_info.items():
                 self.set(inference_id, layer_data)
 
-    def get_total_inference_time(self, inference_id: str) -> int:
+    def get_transmission_latency(self, inference_id: str, split_layer: str, mb_per_s: float = 4.0) -> int:
         inf_data = self.inner_dict[inference_id]
-        layer_times = [
-            layer["inference_time"]
-            for layer in inf_data["layer_information"].values()
-            if layer["inference_time"]
-        ]
-        return int(sum(layer_times))
+        split_layer = split_layer
+        # TODO: fix hardcoding
+        if split_layer == 20:
+            return 0
+        send_layer = int(split_layer - 1)  # type: ignore
+        if split_layer == 0:
+            sent_output_size_bytes = 602112
+        else:
+            sent_output_size_bytes = inf_data["layer_information"][send_layer]["output_bytes"]
+        bytes_per_second = mb_per_s * 1e6
+        latency_s = sent_output_size_bytes / bytes_per_second
+        latency_ns = int(latency_s * 1e9)
+        return latency_ns
 
-    def get_split_layer(self, inference_id: str):
+    def get_total_inference_time(self, inference_id: str) -> tuple[int, int]:
+        inf_data = self.inner_dict[inference_id]
+        # layer_times = [
+        #     layer["inference_time"]
+        #     for layer in inf_data["layer_information"].values()
+        #     if layer["inference_time"]
+        # ]
+        
+        elayer_times = [
+            int(layer["inference_time"])
+            for layer in inf_data["layer_information"].values()
+            if layer["inference_time"] and layer["completed_by_node"] == "EDGE1"
+        ]
+        clayer_times = [
+            int(layer["inference_time"])
+            for layer in inf_data["layer_information"].values()
+            if layer["inference_time"] and layer["completed_by_node"] == "CLIENT1"
+        ]
+        return int(sum(clayer_times)), int(sum(elayer_times))
+
+    def get_split_layer(self, inference_id: str) -> int:
         inf_data = self.inner_dict[inference_id]
         layer_ids = sorted(list(inf_data["layer_information"].keys()))
         start_node = inf_data["layer_information"][0]["completed_by_node"]
         for layer_id in layer_ids:
             if inf_data["layer_information"][layer_id]["completed_by_node"] != start_node:
-                return layer_id
+                return layer_id  # type: ignore
+        # TODO: fix hardcoding
+        if start_node == "CLIENT1":
+            return 0
+        else:
+            return 20
+
+    def calculate_supermetrics(self, inference_id: str) -> tuple[int, int, int, int, int]:
+        split_layer = self.get_split_layer(inference_id)
+        transmission_latency = self.get_transmission_latency(inference_id, split_layer)  # type: ignore
+        inf_time_client, inf_time_edge = self.get_total_inference_time(inference_id)
+        time_to_result = inf_time_client + inf_time_edge + transmission_latency
+        return split_layer, transmission_latency, inf_time_client, inf_time_edge, time_to_result
 
     def to_dataframe(self) -> pd.DataFrame:
         flattened_data = []
@@ -58,18 +100,17 @@ class MasterDict:
 
         for superfields in self.inner_dict.values():
             inf_id = superfields["inference_id"]
-            split_layer = self.get_split_layer(inf_id)
-            total_time_ns = self.get_total_inference_time(inf_id)
+            split_layer, trans_latency, inf_time_client, inf_time_edge, total_time_to_result = self.calculate_supermetrics(inf_id)
             for subdict in superfields["layer_information"].values():
                 layer_id = subdict.pop("layer_id")
                 if not layer_attrs:
                     layer_attrs = [key for key in subdict.keys()]
-                row = (inf_id, layer_id, split_layer, total_time_ns, *[subdict[k] for k in layer_attrs])
+                row = (inf_id, split_layer, total_time_to_result, inf_time_client, inf_time_edge, trans_latency, layer_id, *[subdict[k] for k in layer_attrs])
                 flattened_data.append(row)
 
         flattened_data.sort(key=lambda tup: (tup[0], tup[1]))
 
-        columns = ["inference_id", "layer_id", "split_layer", "total_inference_time_ns", *layer_attrs]
+        columns = ["inference_id", "split_layer", "total_time_ns", "inf_time_client", "inf_time_edge", "transmission_latency_ns", "layer_id", *layer_attrs]
         df = pd.DataFrame(flattened_data, columns=columns)
 
         return df

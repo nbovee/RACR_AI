@@ -46,19 +46,36 @@ class ClientService(ParticipantService):
         input = task.input
         splittable_layer_count = self.model.splittable_layer_count
 
-        current_split_layer = 1
-        while current_split_layer < splittable_layer_count - 1:
+        current_split_layer = 0
+        while current_split_layer < splittable_layer_count:
             inference_id = str(uuid.uuid4())
             start, end = 0, current_split_layer
-            logger.info(f"running split inference from layers {start} to {end}")
-            out = self.model(
-                input, inference_id, start=start, end=end
-            )
-            downstream_task = tasks.SimpleInferenceTask(
-                self.node_name, out, inference_id=inference_id, start_layer=end
-            )
-            self.send_task(self.DOWNSTREAM_PARTNER, downstream_task)
-            current_split_layer += 1
+
+            if end == 0:
+                logger.info("Completing full inference without help.")
+                self.model(input, inference_id)
+                current_split_layer += 1
+                continue
+
+            elif end == splittable_layer_count - 1:
+                logger.info(f"Sending full job to {self.DOWNSTREAM_PARTNER}")
+                downstream_task = tasks.SimpleInferenceTask(
+                    self.node_name, input, inference_id=inference_id, start_layer=0
+                )
+                self.send_task(self.DOWNSTREAM_PARTNER, downstream_task)
+                current_split_layer += 1 
+                continue
+
+            else:
+                logger.info(f"running split inference from layers {start} to {end}")
+                out = self.model(
+                    input, inference_id, start=start, end=end
+                )
+                downstream_task = tasks.SimpleInferenceTask(
+                    self.node_name, out, inference_id=inference_id, start_layer=end
+                )
+                self.send_task(self.DOWNSTREAM_PARTNER, downstream_task)
+                current_split_layer += 1
 
     def on_finish(self, _):
         downstream_finish_signal = tasks.FinishSignalTask(self.node_name)
