@@ -13,6 +13,10 @@ import uuid
 import copy
 from torchinfo import summary
 from torchinfo.layer_info import LayerInfo
+import requests
+sys.path.append(os.path.join(os.getcwd(), "yolov5"))
+from models.experimental import attempt_load
+
 
 
 class HookExitException(Exception):
@@ -50,8 +54,10 @@ class WrappedModel(nn.Module):
         self.mode = kwargs.get("mode","eval")
         self.hook_depth = kwargs.get("depth", np.inf)
         self.base_input_size = kwargs.get("image_size", (3, 224, 224))
+        self.model_name = kwargs.get("model_name","alexnet")
+        
         atexit.register(self.safeClose)
-        self.pretrained = kwargs.pop("pretrained", models.alexnet(pretrained=True))
+        self.pretrained = kwargs.pop("pretrained", self.model_selector(self.model_name))
         self.splittable_layer_count = 0
         self.selected_out = OrderedDict()  # could be useful for skips
         self.f_hooks = []
@@ -85,7 +91,32 @@ class WrappedModel(nn.Module):
                 self.device = "cpu"
         self.pretrained.to(self.device)
         self.warmup(iterations=2)
-
+    
+    
+    def model_selector(self,model_name):
+        try:
+            model_name = model_name.lower().strip()
+            if "alexnet" in model_name:
+                return models.alexnet(pretrained=True)
+            
+            elif "yolov5s" in model_name:
+                if not os.path.exists(f"{model_name}.pt"):
+                    base_url = 'https://github.com/ultralytics/yolov5/releases/download/'
+                    if model_name in ['yolov5s', 'yolov5m', 'yolov5l', 'yolov5x']:
+                        url = f"{base_url}v5.0/{model_name}.pt"
+                    else:
+                        raise ValueError(f"Model name {model_name} not recognized")
+                    r = requests.get(url, allow_redirects=True)
+                    open(f"{model_name}.pt", 'wb').write(r.content)
+                model = attempt_load(f"{model_name}.pt")
+                return model
+        except Exception as error:
+            print("Exception occur due to {0}".format(str(error)))
+            sys.exit(1)
+            
+            
+            
+            
     def walk_modules(self, module_generator, depth):
         """Recursively walks and marks Modules for hooks in a DFS. Most NN have an intended or intuitive depth to split at, but it is not obvious to the naive program."""
         for child in module_generator:
@@ -190,13 +221,14 @@ class WrappedModel(nn.Module):
         self.current_module_start_index = start
 
         # prepare inference_id for storing results
-        inference_id = str(uuid.uuid4()) if inference_id is None else inference_id
-        if len(str(inference_id).split(".")) > 1:
-            suffix = int(str(inference_id).split(".")[-1]) + 1
+        _inference_id = "unlogged" if inference_id is None else inference_id
+        if len(str(_inference_id).split(".")) > 1:
+            suffix = int(str(_inference_id).split(".")[-1]) + 1
         else:
             suffix = 0
-        self.inference_dict['inference_id'] = str(str(inference_id).split(".")[0])+f'.{suffix}'
-        
+        _inference_id = str(str(_inference_id).split(".")[0])+f'.{suffix}'
+        self.inference_dict['inference_id'] = _inference_id
+        print(f"{_inference_id} id beginning.")
         # actually run the forward pass
         try:
             if self.mode != "train":
@@ -213,13 +245,14 @@ class WrappedModel(nn.Module):
         # process and clean dicts before leaving forward
         self.inference_dict['layer_information'] = self.forward_dict
         if log:
-            self.master_dict[str(inference_id).split(".")[0]] = copy.deepcopy(self.inference_dict) # only one deepcopy needed
+            self.master_dict[str(_inference_id).split(".")[0]] = copy.deepcopy(self.inference_dict) # only one deepcopy needed
         self.inference_dict = {}
         self.forward_dict = copy.deepcopy(self.empty_buffer_dict)
 
         # reset hook variables
         self.current_module_stop_index = None
         self.current_module_index = None
+        print(f"{_inference_id} end.")
         return out
 
     def parse_input(self, input):
