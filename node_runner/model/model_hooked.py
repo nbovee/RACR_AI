@@ -14,8 +14,8 @@ import copy
 from torchinfo import summary
 from torchinfo.layer_info import LayerInfo
 import requests
-sys.path.append(os.path.join(os.getcwd(), "yolov5"))
-from models.experimental import attempt_load
+from pathlib import Path
+import git
 
 
 
@@ -100,15 +100,28 @@ class WrappedModel(nn.Module):
                 return models.alexnet(pretrained=True)
             
             elif "yolov5s" in model_name:
-                if not os.path.exists(f"{model_name}.pt"):
-                    base_url = 'https://github.com/ultralytics/yolov5/releases/download/'
-                    if model_name in ['yolov5s', 'yolov5m', 'yolov5l', 'yolov5x']:
-                        url = f"{base_url}v5.0/{model_name}.pt"
-                    else:
-                        raise ValueError(f"Model name {model_name} not recognized")
-                    r = requests.get(url, allow_redirects=True)
-                    open(f"{model_name}.pt", 'wb').write(r.content)
-                model = attempt_load(f"{model_name}.pt")
+                FILE = Path(__file__).resolve()
+                ROOT = FILE.parents[0]
+                yolov5_path = os.path.join(ROOT,"yolov5")
+                if not os.path.exists(yolov5_path):
+                    print("yolov5 folder is not found")
+                    os.mkdir(yolov5_path,mode=777)
+                    repo_url ="https://github.com/ultralytics/yolov5.git"
+                    git.Repo.clone_from(repo_url,yolov5_path)
+                    print("cloning the repo completed successfully")
+                sys.path.append(yolov5_path)
+                from models.experimental import attempt_load 
+                
+                #cloning the model copy
+                base_url = 'https://github.com/ultralytics/yolov5/releases/download/'
+                if model_name in ['yolov5s', 'yolov5m', 'yolov5l', 'yolov5x']:
+                    url = f"{base_url}v5.0/{model_name}.pt"
+                else:
+                    raise ValueError(f"Model name {model_name} not recognized")
+                r = requests.get(url, allow_redirects=True)
+                open(f"{yolov5_path}/{model_name}.pt", 'wb').write(r.content)
+                print("load the model")
+                model = attempt_load(f"{yolov5_path}/{model_name}.pt")
                 return model
         except Exception as error:
             print("Exception occur due to {0}".format(str(error)))
