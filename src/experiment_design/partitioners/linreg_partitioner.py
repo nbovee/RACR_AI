@@ -71,11 +71,11 @@ class RegressionPartitioner(Partitioner):
             else:
                 server_time_est_s = int(self.server_regression[module].forward(torch.as_tensor(float(param_bytes))))*1e-9 # get server_regression from grpc
             output_transfer_time = output_bytes/self._get_network_speed_bytes()
-            if (local_time_est_s) < output_transfer_time + server_time_est_s:
+
+            if local_time_est_s < output_transfer_time + server_time_est_s:
                 starting_layer += 1
             else:
                 return starting_layer
-        return starting_layer
 
     def create_data(self, model, iterations = 10):
         for f in os.listdir(self._dir):
