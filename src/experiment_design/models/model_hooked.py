@@ -11,8 +11,17 @@ import atexit
 from collections import OrderedDict
 import copy
 from torchinfo import summary
+import sys
+from pathlib import Path
+
+t = (str(Path(__file__).resolve().parent.parent.parent.parent))
+sys.path.append(t)
 
 from src.experiment_design.records.master_dict import MasterDict
+
+from ultralytics import YOLO
+
+
 
 
 logger = logging.getLogger("tracr_logger")
@@ -65,7 +74,11 @@ class WrappedModel(nn.Module):
         self.f_pre_hooks = []
        
         # run torchinfo here to get parameters/flops/mac for entry into dict      
-        self.torchinfo = summary(self.pretrained, (1, *self.base_input_size), verbose=0)
+        self.torchinfo = summary(self.pretrained, (1, *self.base_input_size), col_names=["input_size", "output_size" ,"num_params"], verbose=0)
+
+        self.yolo_test()
+
+
         self.walk_modules(self.pretrained.children(), 1) # depth starts at 1 to match torchinfo depths
         del self.torchinfo
         self.empty_buffer_dict = copy.deepcopy(self.forward_dict)
@@ -91,7 +104,22 @@ class WrappedModel(nn.Module):
                 print("Loading Model to CPU. CUDA not available.")
                 self.device = "cpu"
         self.pretrained.to(self.device)
-        self.warmup(iterations=2)
+        self.warmup(iterations=1)
+
+    def yolo_test(self):
+        input_dict = {}
+        output_dict = {}
+        def allhook(module, input, output):
+            print("hook call")
+            for key, val in output_dict.items():
+                if torch.all(torch.eq(val, input[0])):
+                    print(f"match found between output of {key} and input of {id(module)}")
+                else:
+                    print(f"{val.__class__=} {input.__class__=}")
+            input_dict[id(module)] = input
+            output_dict[id(module)] = output
+
+        torch.nn.modules.module.register_module_forward_hook(allhook)
 
     def walk_modules(self, module_generator, depth):
         """Recursively walks and marks Modules for hooks in a DFS. Most NN have an intended or intuitive
@@ -288,5 +316,5 @@ class WrappedModel(nn.Module):
 
 if __name__ == "__main__":
     # running as main will test baselines on the running platform
-    m = WrappedModel()
+    m = WrappedModel(pretrained = YOLO("yolov8n.yaml").model)
 
