@@ -16,8 +16,32 @@ from torchinfo.layer_info import LayerInfo
 import requests
 from pathlib import Path
 import git
+FILE = Path(__file__).resolve()
+ROOT = FILE.parents[0]
+sys.path.append(str(ROOT))
+from custom_yolo_dataloader import CustomYOLODataLoader
+from ultralytics import YOLO
+import yaml 
 
 
+class Model_Configuration_Setup:
+    
+    def __init__(self,path):
+        try:
+            self.yaml_file_path = path
+            self.config_details = self.__read_yaml_data()
+        except Exception as error:
+            print("Exception occur due to {}".format(str(error)))
+            sys.exit(1)
+    
+    def __read_yaml_data(self):
+        try:
+            with open(self.yaml_file_path, 'r') as file:
+                yaml_content = yaml.safe_load(file)
+        except Exception as error:
+            print("Exception occur due to {}".format(str(error)))
+            sys.exit(1)
+        return yaml_content
 
 class HookExitException(Exception):
     """Exception to early exit from inference in naive running."""
@@ -43,7 +67,7 @@ class WrappedModel(nn.Module):
         "watts_used": None,
     }
 
-    def __init__(self, *args, dict = None, **kwargs):
+    def __init__(self,config_setup=None, *args, dict = None, **kwargs):
         print(*args)
         super().__init__(*args)
         self.timer = time.perf_counter_ns
@@ -54,75 +78,67 @@ class WrappedModel(nn.Module):
         self.mode = kwargs.get("mode","eval")
         self.hook_depth = kwargs.get("depth", np.inf)
         self.base_input_size = kwargs.get("image_size", (3, 224, 224))
+        
+        if config_setup is not None and isinstance(config_setup, Model_Configuration_Setup):
+            self.config_details = config_setup.config_details
+        else:
+            # Handle the case where no valid configuration is provided
+            print("No valid configuration provided. Using default settings.")
+            self.config_details = {} 
+            
+            
         self.model_name = kwargs.get("model_name","alexnet")
-        
-        atexit.register(self.safeClose)
-        self.pretrained = kwargs.pop("pretrained", self.model_selector(self.model_name))
-        self.splittable_layer_count = 0
-        self.selected_out = OrderedDict()  # could be useful for skips
-        self.f_hooks = []
-        self.f_pre_hooks = []
-       
-        # run torchinfo here to get parameters/flops/mac for entry into dict      
-        self.torchinfo = summary(self.pretrained, (1, *self.base_input_size), verbose=0)
-        self.walk_modules(self.pretrained.children(), 1) # depth starts at 1 to match torchinfo depths
-        del self.torchinfo
-        self.empty_buffer_dict = copy.deepcopy(self.forward_dict)
-       
-        # ---- class scope values that the hooks and forward pass use ----
-        self.current_module_start_index = None
-        self.current_module_stop_index = None
-        self.current_module_index = None
-        self.banked_input = None
-        
-        # layers before this index are not added to tracking dictionary, as they are not based upon the given input tensor
-        
-        # will not perform inference at this layer or above, watch if pruned.
-        self.max_ignore_layer_index = self.splittable_layer_count - 1
-        
+        self.model_name = self.model_name.lower().strip()
 
-        if self.mode == "eval":
-            self.pretrained.eval()
-        if self.device == "cuda":
-            if torch.cuda.is_available():
-                print("Loading Model to CUDA.")
-            else:
-                print("Loading Model to CPU. CUDA not available.")
-                self.device = "cpu"
-        self.pretrained.to(self.device)
-        self.warmup(iterations=2)
+        atexit.register(self.safeClose)
+        self.model = self.model_selector(self.model_name)
+        self.pretrained = kwargs.pop("pretrained",self.model)
+        if isinstance(config_setup, Model_Configuration_Setup) and "yolo" in self.model_name:
+            self.train_model(self.model)
+        else:
+            self.splittable_layer_count = 0
+            self.selected_out = OrderedDict()  # could be useful for skips
+            self.f_hooks = []
+            self.f_pre_hooks = []
+            print("check-point -1")
+            # run torchinfo here to get parameters/flops/mac for entry into dict      
+            self.torchinfo = summary(self.pretrained, (1, *self.base_input_size), verbose=0)
+            self.walk_modules(self.pretrained.children(), 1) # depth starts at 1 to match torchinfo depths
+            del self.torchinfo
+            self.empty_buffer_dict = copy.deepcopy(self.forward_dict)
+            print("check-point -2")
+            # ---- class scope values that the hooks and forward pass use ----
+            self.current_module_start_index = None
+            self.current_module_stop_index = None
+            self.current_module_index = None
+            self.banked_input = None
+            
+            # layers before this index are not added to tracking dictionary, as they are not based upon the given input tensor
+            
+            # will not perform inference at this layer or above, watch if pruned.
+            self.max_ignore_layer_index = self.splittable_layer_count - 1
+        
+            if self.mode == "eval":
+                self.pretrained.eval()
+            if self.device == "cuda":
+                if torch.cuda.is_available():
+                    print("Loading Model to CUDA.")
+                else:
+                    print("Loading Model to CPU. CUDA not available.")
+                    self.device = "cpu"
+            self.pretrained.to(self.device)
+            self.warmup(iterations=2)
+        
     
     
     def model_selector(self,model_name):
         try:
-            model_name = model_name.lower().strip()
-            if "alexnet" in model_name:
+            
+            if "alexnet" in self.model_name:
                 return models.alexnet(pretrained=True)
             
-            elif "yolov5s" in model_name:
-                FILE = Path(__file__).resolve()
-                ROOT = FILE.parents[0]
-                yolov5_path = os.path.join(ROOT,"yolov5")
-                if not os.path.exists(yolov5_path):
-                    print("yolov5 folder is not found")
-                    os.mkdir(yolov5_path,mode=777)
-                    repo_url ="https://github.com/ultralytics/yolov5.git"
-                    git.Repo.clone_from(repo_url,yolov5_path)
-                    print("cloning the repo completed successfully")
-                sys.path.append(yolov5_path)
-                from models.experimental import attempt_load 
-                
-                #cloning the model copy
-                base_url = 'https://github.com/ultralytics/yolov5/releases/download/'
-                if model_name in ['yolov5s', 'yolov5m', 'yolov5l', 'yolov5x']:
-                    url = f"{base_url}v5.0/{model_name}.pt"
-                else:
-                    raise ValueError(f"Model name {model_name} not recognized")
-                r = requests.get(url, allow_redirects=True)
-                open(f"{yolov5_path}/{model_name}.pt", 'wb').write(r.content)
-                print("load the model")
-                model = attempt_load(f"{yolov5_path}/{model_name}.pt")
-                return model
+            elif "yolo" in self.model_name:
+               return YOLO(self.model_name)
         except Exception as error:
             print("Exception occur due to {0}".format(str(error)))
             sys.exit(1)
@@ -302,7 +318,23 @@ class WrappedModel(nn.Module):
     def safeClose(self):
         torch.cuda.empty_cache()
 
+    def prepare_yolo_dataset(self):
+        data_loader = CustomYOLODataLoader(self.config_details)
+        data_loader.prepare_dataset()
+        print("Dataset prepared for YOLO training.")
+        
+    def train_model(self, model):
+        self.prepare_yolo_dataset()
+        yaml_data_path = self.config_details["yaml_label_information_path"]
+        model.train(data=yaml_data_path, imgsz=512, batch=24, epochs=150)
+
+
 
 if __name__ == "__main__":
     # running as main will test baselines on the running platform
-    m = WrappedModel()
+    
+    yaml_file_path = os.path.join(str(ROOT)+"\config.yaml")
+    model_config_details = Model_Configuration_Setup(yaml_file_path)
+    print(model_config_details.config_details)
+    m = WrappedModel(config_setup = model_config_details,model_name="yolov5s.pt")
+
