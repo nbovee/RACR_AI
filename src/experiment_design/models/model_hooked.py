@@ -109,17 +109,27 @@ class WrappedModel(nn.Module):
     def yolo_test(self):
         input_dict = {}
         output_dict = {}
+        layer_dict = {}
+        self._layer_iter = 0
         def allhook(module, input, output):
             print("hook call")
-            for key, val in output_dict.items():
-                if torch.all(torch.eq(val, input[0])):
-                    print(f"match found between output of {key} and input of {id(module)}")
+            for i, (key, val) in enumerate(output_dict.items()):
+                if torch.equal(val, input[0]):
+                    print(f"match found between output of {layer_dict[key]} and input of {self._layer_iter}")
                 else:
-                    print(f"{val.__class__=} {input.__class__=}")
-            input_dict[id(module)] = input
-            output_dict[id(module)] = output
+                    print(f"{i=}")
+            if id(module) not in layer_dict.keys():
+                layer_dict[id(module)] = self._layer_iter
+                input_dict[id(module)] = input
+                output_dict[id(module)] = output
+            else:
+                print("layer already mapped")
+            self._layer_iter+=1
 
-        torch.nn.modules.module.register_module_forward_hook(allhook)
+        del_handle = torch.nn.modules.module.register_module_forward_hook(allhook)
+        self.warmup(iterations=1, force=True)
+        del_handle.remove()
+
 
     def walk_modules(self, module_generator, depth):
         """Recursively walks and marks Modules for hooks in a DFS. Most NN have an intended or intuitive
@@ -297,7 +307,7 @@ class WrappedModel(nn.Module):
         return input_tensor
 
     def warmup(self, iterations=50, force=False):
-        if self.device != "cuda" and force is not False:
+        if self.device != "cuda" and force is not True:
             print("Warmup not required.")
         else:
             print("Starting warmup.")
@@ -316,5 +326,6 @@ class WrappedModel(nn.Module):
 
 if __name__ == "__main__":
     # running as main will test baselines on the running platform
-    m = WrappedModel(pretrained = YOLO("yolov8n.yaml").model)
+    m = WrappedModel(pretrained = YOLO("yolov8n.yaml").model,
+                     depth = 1)
 
