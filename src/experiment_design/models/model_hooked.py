@@ -107,24 +107,31 @@ class WrappedModel(nn.Module):
         self.warmup(iterations=1)
 
     def yolo_test(self):
-        input_dict = {}
-        output_dict = {}
-        layer_dict = {}
+        stored_values = {}
+        links_found = {}
         self._layer_iter = 0
+        self._yolo_depth = 0
         def allhook(module, input, output):
-            print("hook call")
-            for i, (key, val) in enumerate(output_dict.items()):
-                if torch.equal(val, input[0]):
-                    print(f"match found between output of {layer_dict[key]} and input of {self._layer_iter}")
+    
+            stored_values[id(module)] = None
+
+            def _sub_step(partial_input):
+                pass
+            
+            print(f"hook {self._layer_iter}")
+            
+            for test_val in input[0]: # input is a tuple, element 0 is the input, hopefully this doesn't iterate through the natural tensor
+                for i, (key, (_, st_input, st_output)) in enumerate(stored_values.items()):
+                    
+                    if torch.equal(val, test_val):
+                        print(f"match found between output of {layer_dict[key]} and input of {self._layer_iter}")
+                if id(module) not in layer_dict.keys():
+                    layer_dict[id(module)] = self._layer_iter
+                    input_dict[id(module)] = test_val
+                    output_dict[id(module)] = output
                 else:
-                    print(f"{i=}")
-            if id(module) not in layer_dict.keys():
-                layer_dict[id(module)] = self._layer_iter
-                input_dict[id(module)] = input
-                output_dict[id(module)] = output
-            else:
-                print("layer already mapped")
-            self._layer_iter+=1
+                    print("layer already mapped")
+                self._layer_iter+=1
 
         del_handle = torch.nn.modules.module.register_module_forward_hook(allhook)
         self.warmup(iterations=1, force=True)
