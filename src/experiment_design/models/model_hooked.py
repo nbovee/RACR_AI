@@ -107,30 +107,35 @@ class WrappedModel(nn.Module):
         self.warmup(iterations=1)
 
     def yolo_test(self):
+        # this will be integratd into walk_modules() once complete
         stored_values = {}
         links_found = {}
         self._layer_iter = 0
-        self._yolo_depth = 0
+        self._yolo_depth = 0 # doesnt matter?
         def allhook(module, input, output):
-    
-            stored_values[id(module)] = None
-
             def _sub_step(partial_input):
-                pass
+                # for existing outputs, check equals()
+                for id, index, _, test_val, _ in stored_values.items():
+                    if torch.equal(partial_input, test_val):
+                        pass
+                    
+            stored_values[id(module)] = [self._layer_iter, input, output, self._get_name()]
+            print(f"Hook: {self._layer_iter}")
             
-            print(f"hook {self._layer_iter}")
+            for entry in input:
+                if isinstance(entry, torch.Tensor):
+                    _sub_step(entry)
+                elif isinstance(entry, list):
+                    for item in entry:
+                        _sub_step(item)
+                else:
+                    raise Exception(f"Unhanded class for hook {entry.__class__.__name__}")
             
             for test_val in input[0]: # input is a tuple, element 0 is the input, hopefully this doesn't iterate through the natural tensor
                 for i, (key, (_, st_input, st_output)) in enumerate(stored_values.items()):
                     
                     if torch.equal(val, test_val):
                         print(f"match found between output of {layer_dict[key]} and input of {self._layer_iter}")
-                if id(module) not in layer_dict.keys():
-                    layer_dict[id(module)] = self._layer_iter
-                    input_dict[id(module)] = test_val
-                    output_dict[id(module)] = output
-                else:
-                    print("layer already mapped")
                 self._layer_iter+=1
 
         del_handle = torch.nn.modules.module.register_module_forward_hook(allhook)
