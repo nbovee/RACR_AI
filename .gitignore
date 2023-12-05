@@ -147,3 +147,5 @@ TestCases/AlexnetSplit/partitioner_datapoints/external/*
 
 pyrightconfig.json
 TEST
+
+AppData/known_devices.yaml
