@@ -21,11 +21,11 @@ ROOT = FILE.parents[0]
 sys.path.append(str(ROOT))
 from custom_yolo_dataloader import CustomYOLODataLoader
 from ultralytics import YOLO
-import yaml 
+import yaml
 
 
 class Model_Configuration_Setup:
-    
+
     def __init__(self,path):
         try:
             self.yaml_file_path = path
@@ -33,7 +33,7 @@ class Model_Configuration_Setup:
         except Exception as error:
             print("Exception occur due to {}".format(str(error)))
             sys.exit(1)
-    
+
     def __read_yaml_data(self):
         try:
             with open(self.yaml_file_path, 'r') as file:
@@ -78,15 +78,15 @@ class WrappedModel(nn.Module):
         self.mode = kwargs.get("mode","eval")
         self.hook_depth = kwargs.get("depth", np.inf)
         self.base_input_size = kwargs.get("image_size", (3, 224, 224))
-        
+        self.dataset_type = kwargs.get("dataset_type","balanced")
         if config_setup is not None and isinstance(config_setup, Model_Configuration_Setup):
             self.config_details = config_setup.config_details
         else:
             # Handle the case where no valid configuration is provided
             print("No valid configuration provided. Using default settings.")
-            self.config_details = {} 
-            
-            
+            self.config_details = {}
+
+
         self.model_name = kwargs.get("model_name","alexnet")
         self.model_name = self.model_name.lower().strip()
 
@@ -100,24 +100,22 @@ class WrappedModel(nn.Module):
             self.selected_out = OrderedDict()  # could be useful for skips
             self.f_hooks = []
             self.f_pre_hooks = []
-            print("check-point -1")
-            # run torchinfo here to get parameters/flops/mac for entry into dict      
+            # run torchinfo here to get parameters/flops/mac for entry into dict
             self.torchinfo = summary(self.pretrained, (1, *self.base_input_size), verbose=0)
             self.walk_modules(self.pretrained.children(), 1) # depth starts at 1 to match torchinfo depths
             del self.torchinfo
             self.empty_buffer_dict = copy.deepcopy(self.forward_dict)
-            print("check-point -2")
             # ---- class scope values that the hooks and forward pass use ----
             self.current_module_start_index = None
             self.current_module_stop_index = None
             self.current_module_index = None
             self.banked_input = None
-            
+
             # layers before this index are not added to tracking dictionary, as they are not based upon the given input tensor
-            
+
             # will not perform inference at this layer or above, watch if pruned.
             self.max_ignore_layer_index = self.splittable_layer_count - 1
-        
+
             if self.mode == "eval":
                 self.pretrained.eval()
             if self.device == "cuda":
@@ -128,24 +126,24 @@ class WrappedModel(nn.Module):
                     self.device = "cpu"
             self.pretrained.to(self.device)
             self.warmup(iterations=2)
-        
-    
-    
+
+
+
     def model_selector(self,model_name):
         try:
-            
+
             if "alexnet" in self.model_name:
                 return models.alexnet(pretrained=True)
-            
+
             elif "yolo" in self.model_name:
-               return YOLO(self.model_name)
+               return YOLO(str(self.model_name)+".pt")
         except Exception as error:
             print("Exception occur due to {0}".format(str(error)))
             sys.exit(1)
-            
-            
-            
-            
+
+
+
+
     def walk_modules(self, module_generator, depth):
         """Recursively walks and marks Modules for hooks in a DFS. Most NN have an intended or intuitive depth to split at, but it is not obvious to the naive program."""
         for child in module_generator:
@@ -160,7 +158,7 @@ class WrappedModel(nn.Module):
                 )
             elif isinstance(child, nn.Module):
                 # if not iterable/too deep, we have found a layer to hook
-                
+
                 for layer in self.torchinfo.summary_list:
                     if layer.layer_id == id(child):
                         break
@@ -219,7 +217,7 @@ class WrappedModel(nn.Module):
                 input = self.banked_input
                 self.banked_input = None
                 return input
-            
+
         return pre_hook
 
     def forward_posthook(self, layer_index, layer_name, input_shape, **kwargs):
@@ -242,7 +240,7 @@ class WrappedModel(nn.Module):
     def forward(self, x, inference_id = None, start=0, end=np.inf, log=True):
         """Wraps the pretrained forward pass to utilize our slicing."""
         end = self.splittable_layer_count if end == np.inf else end
-        
+
         # set values for the hooks to see
         self.log = log
         self.current_module_stop_index = end
@@ -319,22 +317,24 @@ class WrappedModel(nn.Module):
         torch.cuda.empty_cache()
 
     def prepare_yolo_dataset(self):
-        data_loader = CustomYOLODataLoader(self.config_details)
+        data_loader = CustomYOLODataLoader(self.config_details,self.dataset_type)
         data_loader.prepare_dataset()
         print("Dataset prepared for YOLO training.")
-        
+
     def train_model(self, model):
         self.prepare_yolo_dataset()
-        yaml_data_path = self.config_details["yaml_label_information_path"]
+        if self.dataset_type.strip().lower() =="balanced":
+            yaml_data_path = self.config_details["File_path"]["balanced"]["yaml_label_information_path"]
+        elif self.dataset_type.strip().lower() =="unbalanced":
+            yaml_data_path = self.config_details["File_path"]["unbalanced"]["yaml_label_information_path"]
         model.train(data=yaml_data_path, imgsz=512, batch=24, epochs=150)
 
 
 
 if __name__ == "__main__":
     # running as main will test baselines on the running platform
-    
+
     yaml_file_path = os.path.join(str(ROOT)+"\config.yaml")
     model_config_details = Model_Configuration_Setup(yaml_file_path)
     print(model_config_details.config_details)
-    m = WrappedModel(config_setup = model_config_details,model_name="yolov5s.pt")
-
+    m = WrappedModel(config_setup = model_config_details,model_name="yolov5s")
