@@ -2,7 +2,7 @@
 
 tracr is a batteries-included platform that allows users to quickly design and run collaborative inference and split computing experiments over multiple nodes on their local network. It makes it easy to configure remote devices, deploy custom behavior in the form of RPC services, and run experiments with detailed reports and real-time updates.
 
-![output from the "tracr -h" command](./assets/tracrHelp.GIF)
+![output from the "tracr -h" command](./assets/tracrRunDemo.gif)
 
 ## Installation
 
