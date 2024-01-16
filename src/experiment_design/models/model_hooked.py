@@ -2,6 +2,7 @@
 
 import atexit
 import copy
+import logging
 import time
 from collections import OrderedDict
 
@@ -14,6 +15,7 @@ from .model_config import read_model_config
 from .model_selector import model_selector
 
 atexit.register(torch.cuda.empty_cache)
+logger = logging.getLogger("tracr_logger")
 
 
 class HookExitException(Exception):
@@ -42,7 +44,7 @@ class WrappedModel(torch.nn.Module):
     }
 
     def __init__(self, *args, config_path=None, master_dict=None, **kwargs):
-        print(*args)
+        logger.debug(f"{args=}")
         super().__init__(*args)
         self.timer = time.perf_counter_ns
         self.master_dict = master_dict  # this should be the externally accessible dict
@@ -63,7 +65,7 @@ class WrappedModel(torch.nn.Module):
             self.model.children(), 1
         )  # depth starts at 1 to match torchinfo depths
         del self.torchinfo
-        self.empty_buffer_dict = copy.deepcopy(self.forward_dict)
+        self.forward_dict_empty = copy.deepcopy(self.forward_dict)
         # ---- class scope values that the hooks and forward pass use ----
         self.current_module_start_index = None
         self.current_module_stop_index = None
@@ -80,9 +82,9 @@ class WrappedModel(torch.nn.Module):
             self.model.eval()
         if self.device == "cuda":
             if torch.cuda.is_available():
-                print("Loading Model to CUDA.")
+                logger.info("Loading Model to CUDA.")
             else:
-                print("Loading Model to CPU. CUDA not available.")
+                logger.info("Loading Model to CPU. CUDA not available.")
                 self.device = "cpu"
         self.model.to(self.device)
         self.warmup(iterations=2)
@@ -95,12 +97,12 @@ class WrappedModel(torch.nn.Module):
             childname = str(child).split("(", maxsplit=1)[0]
             if len(list(child.children())) > 0 and depth < self.hook_depth:
                 # either has children we want to look at, or is max depth
-                print(
+                logger.debug(
                     f"{'-'*depth}Module {childname} "
                     "with children found, hooking children instead of module."
                 )
                 self.walk_modules(child.children(), depth + 1)
-                print(f"{'-'*depth}End of Module {childname}'s children.")
+                logger.debug(f"{'-'*depth}End of Module {childname}'s children.")
             elif isinstance(child, torch.nn.Module):
                 # if not iterable/too deep, we have found a layer to hook
                 for layer in self.torchinfo.summary_list:
@@ -115,7 +117,7 @@ class WrappedModel(torch.nn.Module):
                             "depth": depth,
                             "layer_id": self.splittable_layer_count,
                             "class": layer.class_name,
-                            "precision": None,
+                            # "precision": None,
                             "parameters": layer.num_params,
                             "parameter_bytes": layer.param_bytes,
                             "input_size": layer.input_size,
@@ -144,7 +146,7 @@ class WrappedModel(torch.nn.Module):
                         with_kwargs=False,
                     )
                 )
-                print(
+                logger.debug(
                     f"{'-'*depth}Layer {self.splittable_layer_count}: "
                     f"{childname} had hooks applied."
                 )
@@ -191,8 +193,8 @@ class WrappedModel(torch.nn.Module):
             ):
                 raise HookExitException(layer_output)
             self.current_module_index += 1
-            # print(f"stop at layer: {self.current_module_stop_index -1}")
-            # print(f"L{layer_index}-{layer_name} returned.")
+            logger.debug(f"stop at layer: {self.current_module_stop_index -1}")
+            logger.debug(f"L{layer_index}-{layer_name} returned.")
 
         return hook
 
@@ -214,7 +216,7 @@ class WrappedModel(torch.nn.Module):
             suffix = 0
         _inference_id = str(str(_inference_id).split(".", maxsplit=1)[0]) + f".{suffix}"
         self.inference_dict["inference_id"] = _inference_id
-        print(f"{_inference_id} id beginning.")
+        logger.info(f"{_inference_id} id beginning.")
         # actually run the forward pass
         try:
             if self.mode != "train":
@@ -223,7 +225,7 @@ class WrappedModel(torch.nn.Module):
             else:
                 out = self.model(x)
         except HookExitException as e:
-            print("Exit early from hook.")
+            logger.debug("Exit early from hook.")
             out = e.result
             for i in range(self.current_module_stop_index, self.splittable_layer_count):
                 del self.forward_dict[i]
@@ -237,12 +239,12 @@ class WrappedModel(torch.nn.Module):
                 self.inference_dict
             )  # only one deepcopy needed
         self.inference_dict = {}
-        self.forward_dict = copy.deepcopy(self.empty_buffer_dict)
+        self.forward_dict = copy.deepcopy(self.forward_dict_empty)
 
         # reset hook variables
         self.current_module_stop_index = None
         self.current_module_index = None
-        print(f"{_inference_id} end.")
+        logger.info(f"{_inference_id} end.")
         return out
 
     def parse_input(self, layer_input):
@@ -266,13 +268,13 @@ class WrappedModel(torch.nn.Module):
     def warmup(self, iterations=50, force=False):
         """runs specified passes on the nn to warm up gpu if enabled"""
         if self.device != "cuda" and force is not False:
-            print("Warmup not required.")
+            logger.info("Warmup not required.")
         else:
-            print("Starting warmup.")
+            logger.info("Starting warmup.")
             with torch.no_grad():
                 for _ in range(iterations):
                     self(torch.randn(1, *self.base_input_size), log=False)
-            print("Warmup complete.")
+            logger.info("Warmup complete.")
 
     def prune_layers(self, newlow, newhigh):
         """NYE: Trim network layers. inputs specify the lower and upper layers to REMAIN.

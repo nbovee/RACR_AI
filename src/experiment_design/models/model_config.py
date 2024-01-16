@@ -1,7 +1,9 @@
-import yaml
+import logging
+
 import numpy as np
+import yaml
 
-
+logger = logging.getLogger("tracr_logger")
 
 def read_model_config(path=None, participant_key = 'client'):
     config_details = __read_yaml_data(path, participant_key)
@@ -13,7 +15,7 @@ def __read_yaml_data(path, participant_key):
         with open(path, "r") as file:
             settings = yaml.safe_load(file)['participant_types'][participant_key]['model']
     except Exception:
-        print("No valid configuration provided. Using default settings, behavior could be unexpected.")
+        logging.warning("No valid configuration provided. Using default settings, behavior could be unexpected.")
 
     # add default entries here just in case
         settings.device = settings.get("device", "cpu")
