@@ -8,7 +8,11 @@ participant_types:
       class: ClientService
     # "default" tells WrappedModel just to use AlexNet
     model:
-      module: default
+      model_name: alexnet
+      device: cpu
+      mode: eval
+      depth: np.inf
+      input_size: (3, 224, 224)
       class: default
   edge:
     service:
