@@ -292,12 +292,3 @@ class WrappedModel(torch.nn.Module):
         """NYE: Trim network layers. inputs specify the lower and upper layers to REMAIN.
         Used to attempt usage on low compute power devices, such as early Raspberry Pi models."""
         raise NotImplementedError
-
-
-if __name__ == "__main__":
-    # running as main will test baselines on the running platform
-
-    yaml_file_path = os.path.join(
-        str(Path(__file__).resolve().parents[0]) + "\config.yaml"
-    )
-    m = WrappedModel(config_path=yaml_file_path, model_name="yolov5s")
