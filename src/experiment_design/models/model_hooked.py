@@ -1,17 +1,17 @@
+"""model_hooked module"""
+
 import atexit
 import copy
-import os
 import time
 from collections import OrderedDict
-from pathlib import Path
 
 import numpy as np
 import torch
 from PIL import Image
 from torchinfo import summary
 
-from .model_config import ModelConfigurationSetup
-from .model_selector import ModelSelector
+from .model_config import read_model_config
+from .model_selector import model_selector
 
 atexit.register(torch.cuda.empty_cache)
 
@@ -26,7 +26,7 @@ class HookExitException(Exception):
 
 class WrappedModel(torch.nn.Module):
     """Wraps a pretrained model with the features necesarry to perform edge computing tests.
-    Uses pytorch hooks to perform benchmarkings, grab intermediate layers, and slice the 
+    Uses pytorch hooks to perform benchmarkings, grab intermediate layers, and slice the
     Sequential to provide input to intermediate layers or exit early.
     """
 
@@ -41,30 +41,26 @@ class WrappedModel(torch.nn.Module):
         "watts_used": None,
     }
 
-    def __init__(self, config_path=None, *args, dict=None, **kwargs):
+    def __init__(self, *args, config_path=None, master_dict=None, **kwargs):
         print(*args)
         super().__init__(*args)
         self.timer = time.perf_counter_ns
-        self.master_dict = dict  # this should be the externally accessible dict
+        self.master_dict = master_dict  # this should be the externally accessible dict
         self.inference_dict = (
             {}
         )  # collation dict for the current partition of a given inference
         self.forward_dict = {}  # dict for the results from the current forward pass
-        self.cfg = ModelConfigurationSetup(config_path)
-
         # assigns config vars to the wrapper
-        self.__dict__.update(vars(self.cfg))
-        print(self.model_name)
-        self.model = ModelSelector(self.model_name)
-        self.pretrained = kwargs.pop("pretrained", self.model)
+        self.__dict__.update(read_model_config(config_path))
+        self.model = model_selector(self.model_name)
         self.splittable_layer_count = 0
         self.selected_out = OrderedDict()  # could be useful for skips
         self.f_hooks = []
         self.f_pre_hooks = []
         # run torchinfo here to get parameters/flops/mac for entry into dict
-        self.torchinfo = summary(self.pretrained, (1, *self.base_input_size), verbose=0)
+        self.torchinfo = summary(self.model, (1, *self.base_input_size), verbose=0)
         self.walk_modules(
-            self.pretrained.children(), 1
+            self.model.children(), 1
         )  # depth starts at 1 to match torchinfo depths
         del self.torchinfo
         self.empty_buffer_dict = copy.deepcopy(self.forward_dict)
@@ -81,71 +77,58 @@ class WrappedModel(torch.nn.Module):
         self.max_ignore_layer_index = self.splittable_layer_count - 1
 
         if self.mode == "eval":
-            self.pretrained.eval()
+            self.model.eval()
         if self.device == "cuda":
             if torch.cuda.is_available():
                 print("Loading Model to CUDA.")
             else:
                 print("Loading Model to CPU. CUDA not available.")
                 self.device = "cpu"
-        self.pretrained.to(self.device)
+        self.model.to(self.device)
         self.warmup(iterations=2)
 
     def walk_modules(self, module_generator, depth):
-        """Recursively walks and marks Modules for hooks in a DFS. Most NN have an 
-        intended or intuitive depth to split at, but it is not obvious to the naive program."""
+        """Recursively walks and marks Modules for hooks in a DFS. Most NN have an
+        intended or intuitive depth to split at, but it is not obvious to the naive program.
+        """
         for child in module_generator:
+            childname = str(child).split("(", maxsplit=1)[0]
             if len(list(child.children())) > 0 and depth < self.hook_depth:
                 # either has children we want to look at, or is max depth
                 print(
-                    f"{'-'*depth}Module {str(child).split('(', maxsplit=1)[0]}\
-                          with children found, hooking children instead of module."
+                    f"{'-'*depth}Module {childname} "
+                    "with children found, hooking children instead of module."
                 )
                 self.walk_modules(child.children(), depth + 1)
-                print(
-                    f"{'-'*depth}End of Module {str(child).split('(', maxsplit=1)[0]}'s children."
-                )
-            elif isinstance(child, torch.Module):
+                print(f"{'-'*depth}End of Module {childname}'s children.")
+            elif isinstance(child, torch.nn.Module):
                 # if not iterable/too deep, we have found a layer to hook
-
                 for layer in self.torchinfo.summary_list:
                     if layer.layer_id == id(child):
                         break
-                if layer.layer_id != id(child):
-                    raise Exception("module id not find while adding hooks.")
-                self.forward_dict[self.splittable_layer_count] = copy.deepcopy(
-                    WrappedModel.layer_template_dict
-                )
-                self.forward_dict[self.splittable_layer_count]["depth"] = depth
-                # block of data from torchinfo
-                self.forward_dict[self.splittable_layer_count][
-                    "layer_id"
-                ] = self.splittable_layer_count
-                self.forward_dict[self.splittable_layer_count][
-                    "class"
-                ] = layer.class_name
-                self.forward_dict[self.splittable_layer_count]["precision"] = None
-                self.forward_dict[self.splittable_layer_count][
-                    "parameters"
-                ] = layer.num_params
-                self.forward_dict[self.splittable_layer_count][
-                    "parameter_bytes"
-                ] = layer.param_bytes
-                self.forward_dict[self.splittable_layer_count][
-                    "input_size"
-                ] = layer.input_size
-                self.forward_dict[self.splittable_layer_count][
-                    "output_size"
-                ] = layer.output_size
-                self.forward_dict[self.splittable_layer_count][
-                    "output_bytes"
-                ] = layer.output_bytes
+                    if layer.layer_id != id(child):
+                        raise ValueError("module id not found while adding hooks.")
+                    self.forward_dict[self.splittable_layer_count] = copy.deepcopy(
+                        WrappedModel.layer_template_dict
+                    ).update(
+                        {
+                            "depth": depth,
+                            "layer_id": self.splittable_layer_count,
+                            "class": layer.class_name,
+                            "precision": None,
+                            "parameters": layer.num_params,
+                            "parameter_bytes": layer.param_bytes,
+                            "input_size": layer.input_size,
+                            "output_size": layer.output_size,
+                            "output_bytes": layer.output_bytes,
+                        }
+                    )
 
                 self.f_hooks.append(
                     child.register_forward_pre_hook(
                         self.forward_prehook(
                             self.splittable_layer_count,
-                            str(child).split("(", maxsplit=1)[0],
+                            childname,
                             (0, 0),
                         ),
                         with_kwargs=False,
@@ -155,15 +138,15 @@ class WrappedModel(torch.nn.Module):
                     child.register_forward_hook(
                         self.forward_posthook(
                             self.splittable_layer_count,
-                            str(child).split("(", maxsplit=1)[0],
+                            childname,
                             (0, 0),
                         ),
                         with_kwargs=False,
                     )
                 )
                 print(
-                    f"{'-'*depth}Layer {self.splittable_layer_count}:\
-                          {str(child).split('(', maxsplit=1)[0]} hooks applied."
+                    f"{'-'*depth}Layer {self.splittable_layer_count}: "
+                    f"{childname} had hooks applied."
                 )
                 # back hooks left out for now
                 self.splittable_layer_count += 1
@@ -171,30 +154,32 @@ class WrappedModel(torch.nn.Module):
     def forward_prehook(self, layer_index, layer_name, input_shape):
         """Prehook a layer for benchmarking."""
 
-        def pre_hook(module, input):
+        def pre_hook(module, layer_input):  # hook signature format is required
             if self.log and (
                 self.current_module_index >= self.current_module_start_index
             ):
                 self.forward_dict[layer_index]["inference_time"] = -self.timer()
             # store input until the correct layer arrives
             if self.current_module_index == 0 and self.current_module_start_index > 0:
-                self.banked_input = copy.deepcopy(input)
+                self.banked_input = copy.deepcopy(layer_input)
                 return torch.randn(1, *self.base_input_size)
             # swap correct input back in now that we are at the right layer
             elif (
                 self.banked_input is not None
                 and self.current_module_index == self.current_module_start_index
             ):
-                input = self.banked_input
+                layer_input = self.banked_input
                 self.banked_input = None
-                return input
+                return layer_input
 
         return pre_hook
 
     def forward_posthook(self, layer_index, layer_name, input_shape, **kwargs):
         """Posthook a layer for output capture and benchmarking."""
 
-        def hook(module, input, output):
+        def hook(
+            module, layer_input, layer_output
+        ):  # hook signature format is required
             if (
                 self.log
                 and self.current_module_index >= self.current_module_start_index
@@ -204,7 +189,7 @@ class WrappedModel(torch.nn.Module):
                 layer_index >= self.current_module_stop_index - 1
                 and layer_index < self.max_ignore_layer_index - 1
             ):
-                raise HookExitException(output)
+                raise HookExitException(layer_output)
             self.current_module_index += 1
             # print(f"stop at layer: {self.current_module_stop_index -1}")
             # print(f"L{layer_index}-{layer_name} returned.")
@@ -212,7 +197,7 @@ class WrappedModel(torch.nn.Module):
         return hook
 
     def forward(self, x, inference_id=None, start=0, end=np.inf, log=True):
-        """Wraps the pretrained forward pass to utilize our slicing."""
+        """Wraps the model forward pass to utilize our slicing."""
         end = self.splittable_layer_count if end == np.inf else end
 
         # set values for the hooks to see
@@ -234,9 +219,9 @@ class WrappedModel(torch.nn.Module):
         try:
             if self.mode != "train":
                 with torch.no_grad():
-                    out = self.pretrained(x)
+                    out = self.model(x)
             else:
-                out = self.pretrained(x)
+                out = self.model(x)
         except HookExitException as e:
             print("Exit early from hook.")
             out = e.result
@@ -260,16 +245,16 @@ class WrappedModel(torch.nn.Module):
         print(f"{_inference_id} end.")
         return out
 
-    def parse_input(self, input):
+    def parse_input(self, layer_input):
         """Checks if the input is appropriate at the given stage of the network.
         Does not yet check Tensor shapes for intermediate layers."""
-        if isinstance(input, Image.Image):
-            if input.size != self.base_input_size:
-                input = input.resize(self.base_input_size)
-            input_tensor = self.preprocess(input)
+        if isinstance(layer_input, Image.Image):
+            if layer_input.size != self.base_input_size:
+                layer_input = layer_input.resize(self.base_input_size)
+            input_tensor = self.preprocess(layer_input)
             input_tensor = input_tensor.unsqueeze(0)
-        elif isinstance(input, torch.Tensor):
-            input_tensor = input
+        elif isinstance(layer_input, torch.Tensor):
+            input_tensor = layer_input
         if (
             torch.cuda.is_available()
             and self.mode == "cuda"
@@ -279,16 +264,18 @@ class WrappedModel(torch.nn.Module):
         return input_tensor
 
     def warmup(self, iterations=50, force=False):
+        """runs specified passes on the nn to warm up gpu if enabled"""
         if self.device != "cuda" and force is not False:
             print("Warmup not required.")
         else:
             print("Starting warmup.")
             with torch.no_grad():
-                for i in range(iterations):
+                for _ in range(iterations):
                     self(torch.randn(1, *self.base_input_size), log=False)
             print("Warmup complete.")
 
     def prune_layers(self, newlow, newhigh):
         """NYE: Trim network layers. inputs specify the lower and upper layers to REMAIN.
-        Used to attempt usage on low compute power devices, such as early Raspberry Pi models."""
+        Used to attempt usage on low compute power devices, such as early Raspberry Pi models.
+        """
         raise NotImplementedError
