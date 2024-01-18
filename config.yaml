@@ -11,7 +11,7 @@ participant_types:
       model_name: alexnet
       device: cpu
       mode: eval
-      depth: np.inf
+      depth: 2
       input_size: [3, 224, 224]
       class: default
   edge:

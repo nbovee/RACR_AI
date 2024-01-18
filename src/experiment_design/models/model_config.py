@@ -21,7 +21,7 @@ def __read_yaml_data(path, participant_key):
         settings.device = settings.get("device", "cpu")
         settings.mode = settings.get("mode", "eval")
         settings.hook_depth = settings.get("depth", np.inf)
-        settings.base_input_size = settings.get("image_size", (3, 224, 224))
+        settings.input_size = settings.get("image_size", (3, 224, 224))
         # settings.dataset_type = kwargs.get("dataset_type", "balanced")
         settings.model_name = settings.get("model_name", "alexnet").lower().strip()
 

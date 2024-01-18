@@ -60,7 +60,7 @@ class WrappedModel(torch.nn.Module):
         self.f_hooks = []
         self.f_pre_hooks = []
         # run torchinfo here to get parameters/flops/mac for entry into dict
-        self.torchinfo = summary(self.model, (1, *self.base_input_size), verbose=0)
+        self.torchinfo = summary(self.model, (1, *self.input_size), verbose=0)
         self.walk_modules(
             self.model.children(), 1
         )  # depth starts at 1 to match torchinfo depths
@@ -95,7 +95,7 @@ class WrappedModel(torch.nn.Module):
         """
         for child in module_generator:
             childname = str(child).split("(", maxsplit=1)[0]
-            if len(list(child.children())) > 0 and depth < self.hook_depth:
+            if len(list(child.children())) > 0 and depth < self.depth:
                 # either has children we want to look at, or is max depth
                 logger.debug(
                     f"{'-'*depth}Module {childname} "
@@ -107,24 +107,21 @@ class WrappedModel(torch.nn.Module):
                 # if not iterable/too deep, we have found a layer to hook
                 for layer in self.torchinfo.summary_list:
                     if layer.layer_id == id(child):
-                        break
-                    if layer.layer_id != id(child):
-                        raise ValueError("module id not found while adding hooks.")
-                    self.forward_dict[self.splittable_layer_count] = copy.deepcopy(
-                        WrappedModel.layer_template_dict
-                    ).update(
-                        {
-                            "depth": depth,
-                            "layer_id": self.splittable_layer_count,
-                            "class": layer.class_name,
-                            # "precision": None,
-                            "parameters": layer.num_params,
-                            "parameter_bytes": layer.param_bytes,
-                            "input_size": layer.input_size,
-                            "output_size": layer.output_size,
-                            "output_bytes": layer.output_bytes,
-                        }
-                    )
+                        self.forward_dict[self.splittable_layer_count] = copy.deepcopy(
+                            WrappedModel.layer_template_dict
+                        ).update(
+                            {
+                                "depth": depth,
+                                "layer_id": self.splittable_layer_count,
+                                "class": layer.class_name,
+                                # "precision": None,
+                                "parameters": layer.num_params,
+                                "parameter_bytes": layer.param_bytes,
+                                "input_size": layer.input_size,
+                                "output_size": layer.output_size,
+                                "output_bytes": layer.output_bytes,
+                            }
+                        )
 
                 self.f_hooks.append(
                     child.register_forward_pre_hook(
@@ -162,9 +159,11 @@ class WrappedModel(torch.nn.Module):
             ):
                 self.forward_dict[layer_index]["inference_time"] = -self.timer()
             # store input until the correct layer arrives
+                
+            # NTS rewrite banked input to also handle skip connections
             if self.current_module_index == 0 and self.current_module_start_index > 0:
                 self.banked_input = copy.deepcopy(layer_input)
-                return torch.randn(1, *self.base_input_size)
+                return torch.randn(1, *self.input_size)
             # swap correct input back in now that we are at the right layer
             elif (
                 self.banked_input is not None
@@ -251,8 +250,8 @@ class WrappedModel(torch.nn.Module):
         """Checks if the input is appropriate at the given stage of the network.
         Does not yet check Tensor shapes for intermediate layers."""
         if isinstance(layer_input, Image.Image):
-            if layer_input.size != self.base_input_size:
-                layer_input = layer_input.resize(self.base_input_size)
+            if layer_input.size != self.input_size:
+                layer_input = layer_input.resize(self.input_size)
             input_tensor = self.preprocess(layer_input)
             input_tensor = input_tensor.unsqueeze(0)
         elif isinstance(layer_input, torch.Tensor):
@@ -273,7 +272,7 @@ class WrappedModel(torch.nn.Module):
             logger.info("Starting warmup.")
             with torch.no_grad():
                 for _ in range(iterations):
-                    self(torch.randn(1, *self.base_input_size), log=False)
+                    self(torch.randn(1, *self.input_size), log=False)
             logger.info("Warmup complete.")
 
     def prune_layers(self, newlow, newhigh):
