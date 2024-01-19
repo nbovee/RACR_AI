@@ -65,14 +65,18 @@ class WrappedModel(torch.nn.Module):
         self.forward_dict = {}  # dict for the results from the current forward pass
         # assigns config vars to the wrapper
         self.__dict__.update(read_model_config(config_path))
+        self.training = True if self.mode in ["train", "training"] else False
         self.model = model_selector(self.model_name)
+        self.drop_save_dict = self._find_save_layers()
         self.flush_buffer_size = flush_buffer_size
         # self.selected_out = OrderedDict()  # could be useful for skips
         self.f_hooks = []
         self.f_pre_hooks = []
         # run torchinfo here to get parameters/flops/mac for entry into dict
+        """ INFO: YOLO() model wrapper appears to map .eval() that torchinfo calls to .train()
+        I don't have a fix tonight outside of popping the model out of the wrapper after setup."""
         self.torchinfo = summary(self.model, (1, *self.input_size), verbose=0)
-        self.layer_count = self.walk_modules(
+        self.layer_count = self._walk_modules(
             self.model.children(), 1
         )  # depth starts at 1 to match torchinfo depths
         del self.torchinfo
@@ -94,7 +98,15 @@ class WrappedModel(torch.nn.Module):
         self.model.to(self.device)
         self.warmup(iterations=2)
 
-    def walk_modules(self, module_generator, depth):
+    def _find_save_layers(self):
+        """Interrogate the model to find skip connections. 
+        Requires the model to have knowledge of its structure (for now)."""
+        drop_save = {}
+
+        return drop_save
+
+
+    def _walk_modules(self, module_generator, depth):
         """Recursively walks and marks Modules for hooks in a DFS. Most NN have an
         intended or intuitive depth to split at, but it is not obvious to the naive program.
         """
@@ -107,7 +119,7 @@ class WrappedModel(torch.nn.Module):
                     f"{'-'*depth}Module {childname} "
                     "with children found, hooking children instead of module."
                 )
-                self.walk_modules(child.children(), depth + 1)
+                self._walk_modules(child.children(), depth + 1)
                 logger.debug(f"{'-'*depth}End of Module {childname}'s children.")
             elif isinstance(child, torch.nn.Module):
                 # if not iterable/too deep, we have found a layer to hook
@@ -162,7 +174,7 @@ class WrappedModel(torch.nn.Module):
         def pre_hook(module, layer_input):  # hook signature format is required
             hook_output = layer_input
             # previous layer exit
-            if self.model_stop_i <= fixed_layer_i < self.max_ignore_layer_i:
+            if self.model_stop_i <= fixed_layer_i < self.layer_count:
                 logger.debug("early exit from forward")
                 # wait to allow non torch.nn.Modules to modify input as needed (ex flatten)
                 self.banked_input[fixed_layer_i] = layer_input
@@ -172,13 +184,13 @@ class WrappedModel(torch.nn.Module):
                 if self.model_start_i == 0:
                     logger.debug("reseting input bank")
                     # initiating pass: reset bank
-                    self.banked_input[fixed_layer_i] = {}
+                    self.banked_input = {}
                 else:
                     logger.debug("importing input bank from initiating network")
                     # completing pass: store input dict until the correct layer arrives
                     self.banked_input = layer_input  # dict expected, deepcopy may help
                     hook_output = torch.randn(1, *self.base_input_size)
-            elif fixed_layer_i in self.save.keys():
+            elif fixed_layer_i in self.drop_save_dict:
                 # if not at first layer, not exiting, at a marked layer
                 if self.model_start_i == 0:
                     logger.debug("storing layer into input bank")
@@ -256,7 +268,7 @@ class WrappedModel(torch.nn.Module):
             if len(self.io_buf_dict) >= self.flush_buffer_size:
                 self.update_master_dict()
         self.inference_dict = {}
-        self.forward_dict = copy.deepcopy(self.empty_buffer_dict)
+        self.forward_dict = copy.deepcopy(self.forward_dict_empty)
 
         # reset hook variables
         self.model_stop_i = None
@@ -264,6 +276,7 @@ class WrappedModel(torch.nn.Module):
         return out
 
     def update_master_dict(self):
+        """Updates the linked MasterDict object with recent data, and clears buffer"""
         logger.debug("WrappedModel.update_master_dict called")
         if self.master_dict is not None and self.io_buf_dict:
             logger.info("flushing IO buffer dict to MasterDict")

@@ -8,7 +8,7 @@ participant_types:
       class: ClientService
     # "default" tells WrappedModel just to use AlexNet
     model:
-      model_name: alexnet
+      model_name: yolov8s
       device: cpu
       mode: eval
       depth: 2
