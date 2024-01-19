@@ -4,13 +4,15 @@ import atexit
 import copy
 import logging
 import time
-from collections import OrderedDict
+from typing import Union
 
 import numpy as np
 import torch
 from PIL import Image
 from torchinfo import summary
+from torchvision.transforms import ToTensor
 
+from src.experiment_design.records.master_dict import MasterDict
 from .model_config import read_model_config
 from .model_selector import model_selector
 
@@ -34,6 +36,7 @@ class WrappedModel(torch.nn.Module):
 
     layer_template_dict = {
         "layer_id": None,  # this one may prove unneeded
+        "completed_by_node": None,
         "class": None,
         "inference_time": None,
         "parameters": None,
@@ -43,11 +46,19 @@ class WrappedModel(torch.nn.Module):
         "watts_used": None,
     }
 
-    def __init__(self, *args, config_path=None, master_dict=None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        config_path=None,
+        master_dict: Union[MasterDict, None] = None,
+        flush_buffer_size: int = 100,
+        **kwargs,
+    ):
         logger.debug(f"{args=}")
         super().__init__(*args)
         self.timer = time.perf_counter_ns
         self.master_dict = master_dict  # this should be the externally accessible dict
+        self.io_buf_dict = {}
         self.inference_dict = (
             {}
         )  # collation dict for the current partition of a given inference
@@ -55,28 +66,22 @@ class WrappedModel(torch.nn.Module):
         # assigns config vars to the wrapper
         self.__dict__.update(read_model_config(config_path))
         self.model = model_selector(self.model_name)
-        self.splittable_layer_count = 0
-        self.selected_out = OrderedDict()  # could be useful for skips
+        self.flush_buffer_size = flush_buffer_size
+        # self.selected_out = OrderedDict()  # could be useful for skips
         self.f_hooks = []
         self.f_pre_hooks = []
         # run torchinfo here to get parameters/flops/mac for entry into dict
         self.torchinfo = summary(self.model, (1, *self.input_size), verbose=0)
-        self.walk_modules(
+        self.layer_count = self.walk_modules(
             self.model.children(), 1
         )  # depth starts at 1 to match torchinfo depths
         del self.torchinfo
         self.forward_dict_empty = copy.deepcopy(self.forward_dict)
         # ---- class scope values that the hooks and forward pass use ----
-        self.current_module_start_index = None
-        self.current_module_stop_index = None
-        self.current_module_index = None
+        self.model_start_i = None
+        self.model_stop_i = None
         self.banked_input = None
-
-        # layers before this index are not added to tracking dictionary,
-        # as they are not based upon the given input tensor
-
-        # will not perform inference at this layer or above, watch if pruned.
-        self.max_ignore_layer_index = self.splittable_layer_count - 1
+        self.log = False
 
         if self.mode == "eval":
             self.model.eval()
@@ -93,6 +98,7 @@ class WrappedModel(torch.nn.Module):
         """Recursively walks and marks Modules for hooks in a DFS. Most NN have an
         intended or intuitive depth to split at, but it is not obvious to the naive program.
         """
+        walk_i = 0
         for child in module_generator:
             childname = str(child).split("(", maxsplit=1)[0]
             if len(list(child.children())) > 0 and depth < self.depth:
@@ -107,12 +113,12 @@ class WrappedModel(torch.nn.Module):
                 # if not iterable/too deep, we have found a layer to hook
                 for layer in self.torchinfo.summary_list:
                     if layer.layer_id == id(child):
-                        self.forward_dict[self.splittable_layer_count] = copy.deepcopy(
+                        self.forward_dict[walk_i] = copy.deepcopy(
                             WrappedModel.layer_template_dict
                         ).update(
                             {
                                 "depth": depth,
-                                "layer_id": self.splittable_layer_count,
+                                "layer_id": walk_i,
                                 "class": layer.class_name,
                                 # "precision": None,
                                 "parameters": layer.num_params,
@@ -126,7 +132,7 @@ class WrappedModel(torch.nn.Module):
                 self.f_hooks.append(
                     child.register_forward_pre_hook(
                         self.forward_prehook(
-                            self.splittable_layer_count,
+                            walk_i,
                             childname,
                             (0, 0),
                         ),
@@ -136,7 +142,7 @@ class WrappedModel(torch.nn.Module):
                 self.f_pre_hooks.append(
                     child.register_forward_hook(
                         self.forward_posthook(
-                            self.splittable_layer_count,
+                            walk_i,
                             childname,
                             (0, 0),
                         ),
@@ -144,68 +150,78 @@ class WrappedModel(torch.nn.Module):
                     )
                 )
                 logger.debug(
-                    f"{'-'*depth}Layer {self.splittable_layer_count}: "
-                    f"{childname} had hooks applied."
+                    f"{'-'*depth}Layer {walk_i}: {childname} had hooks applied."
                 )
                 # back hooks left out for now
-                self.splittable_layer_count += 1
+                walk_i += 1
+        return walk_i
 
-    def forward_prehook(self, layer_index, layer_name, input_shape):
+    def forward_prehook(self, fixed_layer_i, layer_name, input_shape):
         """Prehook a layer for benchmarking."""
 
         def pre_hook(module, layer_input):  # hook signature format is required
-            if self.log and (
-                self.current_module_index >= self.current_module_start_index
-            ):
-                self.forward_dict[layer_index]["inference_time"] = -self.timer()
-            # store input until the correct layer arrives
-                
-            # NTS rewrite banked input to also handle skip connections
-            if self.current_module_index == 0 and self.current_module_start_index > 0:
-                self.banked_input = copy.deepcopy(layer_input)
-                return torch.randn(1, *self.input_size)
-            # swap correct input back in now that we are at the right layer
-            elif (
-                self.banked_input is not None
-                and self.current_module_index == self.current_module_start_index
-            ):
-                layer_input = self.banked_input
-                self.banked_input = None
-                return layer_input
+            hook_output = layer_input
+            # previous layer exit
+            if self.model_stop_i <= fixed_layer_i < self.max_ignore_layer_i:
+                logger.debug("early exit from forward")
+                # wait to allow non torch.nn.Modules to modify input as needed (ex flatten)
+                self.banked_input[fixed_layer_i] = layer_input
+                raise HookExitException(self.banked_input)
+            if fixed_layer_i == 0:
+                # if at first layer, prepare self.banked_input
+                if self.model_start_i == 0:
+                    logger.debug("reseting input bank")
+                    # initiating pass: reset bank
+                    self.banked_input[fixed_layer_i] = {}
+                else:
+                    logger.debug("importing input bank from initiating network")
+                    # completing pass: store input dict until the correct layer arrives
+                    self.banked_input = layer_input  # dict expected, deepcopy may help
+                    hook_output = torch.randn(1, *self.base_input_size)
+            elif fixed_layer_i in self.save.keys():
+                # if not at first layer, not exiting, at a marked layer
+                if self.model_start_i == 0:
+                    logger.debug("storing layer into input bank")
+                    # initiating pass case: store inputs into dict
+                    self.banked_input[fixed_layer_i] = layer_input
+                else:
+                    logger.debug("overwriting layer with input from bank")
+                    # completing pass: overwrite dummy pass with stored input
+                    hook_output = self.banked_input[fixed_layer_i]
+            # lastly, prepare timestamps for current layer
+            if self.log and (fixed_layer_i >= self.model_start_i):
+                self.forward_dict[fixed_layer_i]["completed_by_node"] = self.node_name
+                self.forward_dict[fixed_layer_i]["inference_time"] = -self.timer()
+            logger.debug("returning to forward pass")
+            return hook_output
 
         return pre_hook
 
-    def forward_posthook(self, layer_index, layer_name, input_shape, **kwargs):
+    def forward_posthook(self, fixed_layer_index, layer_name, input_shape, **kwargs):
         """Posthook a layer for output capture and benchmarking."""
 
-        def hook(
-            module, layer_input, layer_output
-        ):  # hook signature format is required
-            if (
-                self.log
-                and self.current_module_index >= self.current_module_start_index
-            ):
-                self.forward_dict[layer_index]["inference_time"] += self.timer()
-            if (
-                layer_index >= self.current_module_stop_index - 1
-                and layer_index < self.max_ignore_layer_index - 1
-            ):
-                raise HookExitException(layer_output)
-            self.current_module_index += 1
-            logger.debug(f"stop at layer: {self.current_module_stop_index -1}")
-            logger.debug(f"L{layer_index}-{layer_name} returned.")
+        def hook(module, layer_input, output):
+            if self.log and fixed_layer_index >= self.model_start_i:
+                self.forward_dict[fixed_layer_index]["inference_time"] += self.timer()
+                logger.debug("layer pass complete")
 
         return hook
 
-    def forward(self, x, inference_id=None, start=0, end=np.inf, log=True):
+    def forward(
+        self,
+        x,
+        inference_id: Union[str, None] = None,
+        start: int = 0,
+        end: Union[int, float] = np.inf,
+        log: bool = True,
+    ):
         """Wraps the model forward pass to utilize our slicing."""
-        end = self.splittable_layer_count if end == np.inf else end
+        end = self.layer_count if end == np.inf else end
 
         # set values for the hooks to see
         self.log = log
-        self.current_module_stop_index = end
-        self.current_module_index = 0
-        self.current_module_start_index = start
+        self.model_stop_i = end
+        self.model_start_i = start
 
         # prepare inference_id for storing results
         _inference_id = "unlogged" if inference_id is None else inference_id
@@ -226,36 +242,51 @@ class WrappedModel(torch.nn.Module):
         except HookExitException as e:
             logger.debug("Exit early from hook.")
             out = e.result
-            for i in range(self.current_module_stop_index, self.splittable_layer_count):
+            for i in range(self.model_stop_i, self.layer_count):
                 del self.forward_dict[i]
 
         # process and clean dicts before leaving forward
         self.inference_dict["layer_information"] = self.forward_dict
-        if log:
-            self.master_dict[
+        if log and self.master_dict:
+            self.io_buf_dict[
                 str(_inference_id).split(".", maxsplit=1)[0]
             ] = copy.deepcopy(
                 self.inference_dict
             )  # only one deepcopy needed
+            if len(self.io_buf_dict) >= self.flush_buffer_size:
+                self.update_master_dict()
         self.inference_dict = {}
-        self.forward_dict = copy.deepcopy(self.forward_dict_empty)
+        self.forward_dict = copy.deepcopy(self.empty_buffer_dict)
 
         # reset hook variables
-        self.current_module_stop_index = None
-        self.current_module_index = None
+        self.model_stop_i = None
         logger.info(f"{_inference_id} end.")
         return out
 
-    def parse_input(self, layer_input):
+    def update_master_dict(self):
+        logger.debug("WrappedModel.update_master_dict called")
+        if self.master_dict is not None and self.io_buf_dict:
+            logger.info("flushing IO buffer dict to MasterDict")
+            self.master_dict.update(self.io_buf_dict)
+            self.io_buf_dict = {}
+            return
+        logger.info(
+            "MasterDict not updated; either buffer is empty or MasterDict is None"
+        )
+
+    def parse_input(self, _input):
         """Checks if the input is appropriate at the given stage of the network.
         Does not yet check Tensor shapes for intermediate layers."""
-        if isinstance(layer_input, Image.Image):
-            if layer_input.size != self.input_size:
-                layer_input = layer_input.resize(self.input_size)
-            input_tensor = self.preprocess(layer_input)
+        if isinstance(_input, Image.Image):
+            if _input.size != self.base_input_size:
+                _input = _input.resize(self.base_input_size)
+            transform = ToTensor()
+            input_tensor = transform(_input)
             input_tensor = input_tensor.unsqueeze(0)
-        elif isinstance(layer_input, torch.Tensor):
-            input_tensor = layer_input
+        elif isinstance(_input, torch.Tensor):
+            input_tensor = _input
+        else:
+            raise ValueError(f"Bad input given to WrappedModel: type {type(_input)}")
         if (
             torch.cuda.is_available()
             and self.mode == "cuda"
