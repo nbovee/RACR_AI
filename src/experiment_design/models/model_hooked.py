@@ -38,7 +38,7 @@ class WrappedModel(torch.nn.Module):
         "layer_id": None,  # this one may prove unneeded
         "completed_by_node": None,
         "class": None,
-        "inference_time": None,
+        "inference_time": 0,
         "parameters": None,
         "parameter_bytes": None,
         # "precision": None, precision is not technically per layer, disabled for now
@@ -77,7 +77,7 @@ class WrappedModel(torch.nn.Module):
         I don't have a fix tonight outside of popping the model out of the wrapper after setup."""
         self.torchinfo = summary(self.model, (1, *self.input_size), verbose=0)
         self.layer_count = self._walk_modules(
-            self.model.children(), 1
+            self.model.children(), 1, 0
         )  # depth starts at 1 to match torchinfo depths
         del self.torchinfo
         self.forward_dict_empty = copy.deepcopy(self.forward_dict)
@@ -99,18 +99,16 @@ class WrappedModel(torch.nn.Module):
         self.warmup(iterations=2)
 
     def _find_save_layers(self):
-        """Interrogate the model to find skip connections. 
+        """Interrogate the model to find skip connections.
         Requires the model to have knowledge of its structure (for now)."""
-        drop_save = {}
+        drop_save_dict = {}
 
-        return drop_save
+        return drop_save_dict
 
-
-    def _walk_modules(self, module_generator, depth):
+    def _walk_modules(self, module_generator, depth, walk_i):
         """Recursively walks and marks Modules for hooks in a DFS. Most NN have an
         intended or intuitive depth to split at, but it is not obvious to the naive program.
         """
-        walk_i = 0
         for child in module_generator:
             childname = str(child).split("(", maxsplit=1)[0]
             if len(list(child.children())) > 0 and depth < self.depth:
@@ -119,7 +117,7 @@ class WrappedModel(torch.nn.Module):
                     f"{'-'*depth}Module {childname} "
                     "with children found, hooking children instead of module."
                 )
-                self._walk_modules(child.children(), depth + 1)
+                walk_i = self._walk_modules(child.children(), depth + 1, walk_i)
                 logger.debug(f"{'-'*depth}End of Module {childname}'s children.")
             elif isinstance(child, torch.nn.Module):
                 # if not iterable/too deep, we have found a layer to hook
@@ -127,7 +125,8 @@ class WrappedModel(torch.nn.Module):
                     if layer.layer_id == id(child):
                         self.forward_dict[walk_i] = copy.deepcopy(
                             WrappedModel.layer_template_dict
-                        ).update(
+                        )
+                        self.forward_dict[walk_i].update(
                             {
                                 "depth": depth,
                                 "layer_id": walk_i,
@@ -172,12 +171,13 @@ class WrappedModel(torch.nn.Module):
         """Prehook a layer for benchmarking."""
 
         def pre_hook(module, layer_input):  # hook signature format is required
+            logger.debug(f"prehook {fixed_layer_i} started")
             hook_output = layer_input
             # previous layer exit
-            if self.model_stop_i <= fixed_layer_i < self.layer_count:
-                logger.debug("early exit from forward")
+            if self.model_stop_i <= fixed_layer_i < self.layer_count and self.hook_style == 'pre':
+                logger.debug("exit (pre) from forward")
                 # wait to allow non torch.nn.Modules to modify input as needed (ex flatten)
-                self.banked_input[fixed_layer_i] = layer_input
+                self.banked_input[fixed_layer_i-1] = layer_input[0]
                 raise HookExitException(self.banked_input)
             if fixed_layer_i == 0:
                 # if at first layer, prepare self.banked_input
@@ -188,9 +188,9 @@ class WrappedModel(torch.nn.Module):
                 else:
                     logger.debug("importing input bank from initiating network")
                     # completing pass: store input dict until the correct layer arrives
-                    self.banked_input = layer_input  # dict expected, deepcopy may help
-                    hook_output = torch.randn(1, *self.base_input_size)
-            elif fixed_layer_i in self.drop_save_dict:
+                    self.banked_input = layer_input[0]  # dict expected, deepcopy may help
+                    hook_output = torch.randn(1, *self.input_size)
+            elif fixed_layer_i in self.drop_save_dict or self.model_start_i == fixed_layer_i:
                 # if not at first layer, not exiting, at a marked layer
                 if self.model_start_i == 0:
                     logger.debug("storing layer into input bank")
@@ -199,7 +199,7 @@ class WrappedModel(torch.nn.Module):
                 else:
                     logger.debug("overwriting layer with input from bank")
                     # completing pass: overwrite dummy pass with stored input
-                    hook_output = self.banked_input[fixed_layer_i]
+                    hook_output = self.banked_input[fixed_layer_i-1]
             # lastly, prepare timestamps for current layer
             if self.log and (fixed_layer_i >= self.model_start_i):
                 self.forward_dict[fixed_layer_i]["completed_by_node"] = self.node_name
@@ -209,14 +209,27 @@ class WrappedModel(torch.nn.Module):
 
         return pre_hook
 
-    def forward_posthook(self, fixed_layer_index, layer_name, input_shape, **kwargs):
+    def forward_posthook(self, fixed_layer_i, layer_name, input_shape, **kwargs):
         """Posthook a layer for output capture and benchmarking."""
 
         def hook(module, layer_input, output):
-            if self.log and fixed_layer_index >= self.model_start_i:
-                self.forward_dict[fixed_layer_index]["inference_time"] += self.timer()
+            if self.log and fixed_layer_i >= self.model_start_i:
+                self.forward_dict[fixed_layer_i]["inference_time"] += self.timer()
                 logger.debug("layer pass complete")
-
+            if fixed_layer_i in self.drop_save_dict or self.model_start_i == fixed_layer_i and self.hook_style == "post":
+                # if not at first layer, not exiting, at a marked layer
+                if self.model_start_i == 0:
+                    logger.debug("storing layer into input bank")
+                    # initiating pass case: store inputs into dict
+                    self.banked_input[fixed_layer_i] = layer_input
+                else:
+                    logger.debug("overwriting layer with input from bank")
+                    # completing pass: overwrite dummy pass with stored input
+                    hook_output = self.banked_input[fixed_layer_i]
+            if self.model_stop_i <= fixed_layer_i < self.layer_count and self.hook_style == 'post':
+                logger.debug("exit (post) from forward")
+                self.banked_input[fixed_layer_i] = layer_input
+                raise HookExitException(self.banked_input)
         return hook
 
     def forward(
@@ -270,8 +283,6 @@ class WrappedModel(torch.nn.Module):
         self.inference_dict = {}
         self.forward_dict = copy.deepcopy(self.forward_dict_empty)
 
-        # reset hook variables
-        self.model_stop_i = None
         logger.info(f"{_inference_id} end.")
         return out
 
