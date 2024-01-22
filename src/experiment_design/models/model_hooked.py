@@ -282,7 +282,11 @@ class WrappedModel(torch.nn.Module):
         self.model_start_i = start
 
         # prepare inference_id for storing results
-        _inference_id = "unlogged" if inference_id is None else inference_id
+        if inference_id is None:
+            _inference_id = "unlogged"
+            self.log = False
+        else:
+            _inference_id = inference_id 
         if len(str(_inference_id).split(".")) > 1:
             suffix = int(str(_inference_id).rsplit(".", maxsplit=1)[-1]) + 1
         else:
