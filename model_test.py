@@ -24,4 +24,6 @@ for i in range(1, m.layer_count):
 
 
 """ CURRENT TASK
+do NOT save layers if they would not be needed upstream
+completing model should update its self.drop_save_dict file based on what it receives
 cleanup hooks and potentially create generator class"""
