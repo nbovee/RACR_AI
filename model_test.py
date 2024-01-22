@@ -24,5 +24,4 @@ for i in range(1, m.layer_count):
 
 
 """ CURRENT TASK
-Verify layer of split is correctly loaded by second model
 cleanup hooks and potentially create generator class"""

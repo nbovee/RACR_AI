@@ -188,7 +188,7 @@ class WrappedModel(torch.nn.Module):
                 self.model_stop_i <= fixed_layer_i < self.layer_count
                 and self.hook_style == "pre"
             ):
-                logger.debug(f"exit signal: during prehook {fixed_layer_i}")
+                logger.info(f"exit signal: during prehook {fixed_layer_i}")
                 # wait to allow non torch.nn.Modules to modify input as needed (ex flatten)
                 self.banked_input[fixed_layer_i - 1] = layer_input[0]
                 raise HookExitException(self.banked_input)
@@ -246,11 +246,9 @@ class WrappedModel(torch.nn.Module):
                 # if not at first layer, not exiting, at a marked layer
                 if self.model_start_i == 0:
                     logger.debug(f"storing layer {fixed_layer_i} into input bank")
-                    if fixed_layer_i == 0:
-                        pass
                     # initiating pass case: store inputs into dict
                     self.banked_input[fixed_layer_i] = layer_input
-                elif self.hook_style == "post" and self.model_start_i > fixed_layer_i:
+                elif self.hook_style == "post" and self.model_start_i >= fixed_layer_i:
                     logger.debug(
                         f"overwriting layer {fixed_layer_i} with input from bank"
                     )
@@ -260,7 +258,7 @@ class WrappedModel(torch.nn.Module):
                 self.model_stop_i <= fixed_layer_i < self.layer_count
                 and self.hook_style == "post"
             ):
-                logger.debug(f"exit signal: during posthook {fixed_layer_i}")
+                logger.info(f"exit signal: during posthook {fixed_layer_i}")
                 self.banked_input[fixed_layer_i] = layer_input
                 raise HookExitException(self.banked_input)
             logger.debug(f"end posthook {fixed_layer_i}")
