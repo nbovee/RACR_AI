@@ -150,3 +150,6 @@ TEST
 
 # nn weights
 *.pt
+
+# set up locally
+AppData/known_devices.yaml
