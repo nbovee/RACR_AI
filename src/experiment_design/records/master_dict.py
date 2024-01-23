@@ -8,6 +8,7 @@ from rpyc.utils.classic import obtain
 
 
 class MasterDict:
+
     def __init__(self):
         self.lock = threading.RLock()
         self.inner_dict = {}
@@ -22,7 +23,6 @@ class MasterDict:
                         for k, v in layer_info.items()
                         if v["inference_time"] is not None
                     }
-                    self.inner_dict[key]["layer_information"].update(layer_info)
                 else:
                     raise ValueError(
                         f"Cannot integrate inference_dict without 'layer_information' field"
@@ -53,9 +53,7 @@ class MasterDict:
         if split_layer == 0:
             sent_output_size_bytes = 602112
         else:
-            sent_output_size_bytes = inf_data["layer_information"][send_layer][
-                "output_bytes"
-            ]
+            sent_output_size_bytes = inf_data["layer_information"][send_layer]["output_bytes"]
         bytes_per_second = mb_per_s * 1e6
         latency_s = sent_output_size_bytes / bytes_per_second
         latency_ns = int(latency_s * 1e9)
@@ -63,6 +61,7 @@ class MasterDict:
 
     def get_total_inference_time(self, inference_id: str) -> tuple[int, int]:
         inf_data = self.inner_dict[inference_id]
+        
         # layer_times = [
         #     layer["inference_time"]
         #     for layer in inf_data["layer_information"].values()
@@ -165,29 +164,3 @@ class MasterDict:
 
     def __setitem__(self, key: str, newvalue: dict):
         return self.set(key, newvalue)
-
-
-if __name__ == "__main__":
-    print("Running test.")
-    from src.app_api.utils import get_repo_root
-
-    test_dict = (
-        get_repo_root()
-        / "UserData"
-        / "TestResults"
-        / "alexnetsplit__2023-10-25T220600.pkl"
-    )
-    assert test_dict.exists()
-    print("test dict exists.")
-
-    with open(test_dict, "rb") as file:
-        test_dict = pickle.load(file)
-
-    sample = test_dict[list(test_dict.keys())[7]]
-    print(f"Unpickled test dict. Sample value: {sample}")
-
-    master_dict = MasterDict()
-    master_dict.inner_dict = test_dict
-
-    test_df = master_dict.to_dataframe()
-    print(test_df.head(45))

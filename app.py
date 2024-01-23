@@ -138,7 +138,6 @@ def experiment_ls(args):
     """
     pass
 
-
 def experiment_run(args):
     """
     Runs an experiment.
@@ -163,7 +162,6 @@ def experiment_run(args):
     log_handling.shutdown_gracefully(rlog_server)
     sleep(2)  # give the remaining remote logs a second to be displayed
     logger.info("Congratulations! The experiment has concluded successfully.")
-
 
 def network(args):
     if args.d:

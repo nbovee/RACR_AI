@@ -35,7 +35,6 @@ class ExperimentManifest:
     """
     A representation of the yaml file used to specify experiment parameters.
     """
-
     participant_types: dict[str, dict[str, dict[str, str]]]
     participant_instances: list[dict[str, str]]
     playbook: dict[str, list[tasks.Task]]

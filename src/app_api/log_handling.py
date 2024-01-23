@@ -61,7 +61,6 @@ class ColorByDeviceFormatter(logging.Formatter):
     COLORS the first time a log is received from that device. All of their logs will be rendered
     with that color to help with readability.
     """
-
     COLORS: list[tuple[str, str]] = [
         ("orange_red1", "indian_red1"),
         ("cyan1", "cyan2"),
@@ -112,6 +111,7 @@ class LogRecordStreamHandler(socketserver.StreamRequestHandler):
 
 
 class ConsoleHandler(logging.StreamHandler):
+
     console: Console = Console()
 
     def emit(self, record):

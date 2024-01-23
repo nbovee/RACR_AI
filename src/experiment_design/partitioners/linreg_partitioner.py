@@ -75,7 +75,6 @@ class RegressionPartitioner(Partitioner):
                 starting_layer += 1
             else:
                 return starting_layer
-        pass
 
     def create_data(self, model, iterations = 10):
         for f in os.listdir(self._dir):
@@ -123,8 +122,8 @@ class RegressionPartitioner(Partitioner):
                             current_linreg.train_pass(z, pred)
                     # then scale b by mmax, our data is not normalized to the same range
                     current_linreg.manually_scale_bias(mmax)
-
-    def _get_network_speed_bytes(self, artificial_value = 10 * 1024**2):
+                    
+    def _get_network_speed_bytes(self, artificial_value = 4 * 1024**2):
         # needs work, ideal methodology to have a thread checking this continuously.
         return artificial_value if artificial_value else None # change none to the thread value 
     
