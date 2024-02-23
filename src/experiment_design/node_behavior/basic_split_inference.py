@@ -44,7 +44,7 @@ class ClientService(ParticipantService):
     def inference_sequence_per_input(self, task: tasks.SingleInputInferenceTask):
         assert self.model is not None
         input = task.input
-        splittable_layer_count = self.model.splittable_layer_count
+        splittable_layer_count = self.model.layer_count
 
         current_split_layer = 0
         while current_split_layer < splittable_layer_count:
