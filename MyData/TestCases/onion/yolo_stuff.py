@@ -1,4 +1,4 @@
-    def prepare_yolo_dataset(self):
+def prepare_yolo_dataset(self):
         data_loader = CustomYOLODataLoader(self.config_details, self.dataset_type)
         data_loader.prepare_dataset()
         print("Dataset prepared for YOLO training.")

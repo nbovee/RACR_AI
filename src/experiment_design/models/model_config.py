@@ -12,7 +12,6 @@ def read_model_config(path=None, participant_key="client"):
     model_fixed_details = {}
     with open(
         os.path.join(os.path.dirname(__file__), "model_configs.yaml"),
-        "r",
         encoding="utf8",
     ) as file:
         model_fixed_details = yaml.safe_load(file)[config_details["model_name"]]
@@ -23,7 +22,7 @@ def read_model_config(path=None, participant_key="client"):
 def __read_yaml_data(path, participant_key):
     settings = {}
     try:
-        with open(path, "r") as file:
+        with open(path) as file:
             settings = yaml.safe_load(file)["participant_types"][participant_key][
                 "model"
             ]
