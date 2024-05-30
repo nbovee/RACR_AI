@@ -21,7 +21,7 @@ logger = logging.getLogger("tracr_logger")
 
 
 class NotDict:
-    """Wrapper for a dict to circumenvent some of Ultralytics forward pass handling"""
+    """Wrapper for a dict to circumenvent some of Ultralytics forward pass handling. Uses a class instead of tuple in case additional handling is added later."""
 
     def __init__(self, passed_dict) -> None:
         self.inner_dict = passed_dict

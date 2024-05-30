@@ -14,7 +14,11 @@ def read_model_config(path=None, participant_key="client"):
         os.path.join(os.path.dirname(__file__), "model_configs.yaml"),
         encoding="utf8",
     ) as file:
-        model_fixed_details = yaml.safe_load(file)[config_details["model_name"]]
+        model_type = config_details["model_name"]
+        # handle various versions of yolo at once
+        if "yolo" in model_type.lower():
+            model_type = "yolo"
+        model_fixed_details = yaml.safe_load(file)[model_type]
         config_details.update(model_fixed_details)
     return config_details
 
