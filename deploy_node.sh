@@ -4,39 +4,23 @@
 # client or remote node for cooperative DNN inference.
 #
 # USAGE:
-#			./deploy_node.sh [FLAGS] SUFFIX
+#			./deploy_node.sh [FLAGS] ROLE
 #
 # FLAGS:
-# 	-n		"no CUDA"	Use for hosts without CUDA support
-#	-r		"remote"	Deploys a remote/server host
-#	-a		"arm64"		Use for arm64 hosts (default is x86)
-#	-t		"terminal"	Opens an interactive terminal session inside the container
+# 	-t		"terminal"	Opens an interactive terminal session inside the container
 #
-# SUFFIX
-#			The suffix is a required argument that tells the script how to find
-#			which Dockerfile to use from the Dockerfiles directory.
+# ROLE
+#			The role is a required argument that tells the script which role to run (observer or dummy).
 
 # Default values if no flags are set
-CUDA_STATE="cuda"
-BUILD_ARG="client"
-ARCH="x86"
 TERMINAL="false"
 
 # Parse through flags
-while getopts ":nrat" opt; do
+while getopts ":t" opt; do
   case $opt in
-    n)
-      CUDA_STATE="nocuda"
+    t)
+      TERMINAL="true"
       ;;
-    r)
-      BUILD_ARG="remote"
-	  ;;
-	a)
-      ARCH="arm64"
-      ;;
-	t)
-	  TERMINAL="true"
-	  ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
       exit 1
@@ -47,40 +31,31 @@ done
 # Remove the processed options
 shift $((OPTIND-1))
 
-# Check if a suffix was provided
+# Check if a role was provided
 if [ $# -eq 0 ]; then
-    echo "No Dockerfile suffix provided. Please provide a suffix as a non-option argument."
+    echo "No role provided. Please provide a role (observer or dummy) as a non-option argument."
     exit 1
 fi
 
-# Save the suffix
-SUFFIX="$1"
+# Save the role
+ROLE="$1"
 
-# Infer the base image name
-BASE_IMAGE_NAME="$ARCH-$CUDA_STATE-$BUILD_ARG-base"
+# Build the Docker image
+docker build -t tracr-app .
 
-# Get the name of the right Dockerfile to build with
-DOCKERFILE="./Dockerfile.$SUFFIX"
-
-# Check if the image was preloaded
-BASE_IMAGE_PRELOADED=$(docker images -q $BASE_IMAGE_NAME)
-
-# Load the image if it was not preloaded
-if [ -z "$BASE_IMAGE_PRELOADED" ]; then
-	PATH_TO_BASE_IMAGE_TARBALL="./docker_images/$BASE_IMAGE_NAME.tar"
-    echo "Loading the $BASE_IMAGE_NAME image using $PATH_TO_BASE_IMAGE_TARBALL..."
-	docker load -i $PATH_TO_BASE_IMAGE_TARBALL || echo "Problem loading image from tarball. Is it there?"
+# Set the command based on the role
+if [ "$ROLE" = "observer" ]; then
+  CMD="python src/tracr/app_api/deploy.py"
+elif [ "$ROLE" = "dummy" ]; then
+  CMD="python src/tracr/experiment_design/services/basic_split_inference.py"
 else
-    echo "Base image for $BASE_IMAGE_NAME already exists on this machine, skipping load."
+  echo "Invalid role: $ROLE. Please provide either 'observer' or 'dummy'."
+  exit 1
 fi
 
-# Build on top of the base image now    
-docker build -t "$SUFFIX-$BUILD_ARG" -f $DOCKERFILE --build-arg branch=$BUILD_ARG .
-
-# if the -t flag was passed, run the container in interactive terminal mode
+# Run the container
 if [ "$TERMINAL" = "true" ]; then
-	docker run -p 3001:3000 -it --name "$BASE_IMAGE_NAME-instance" $BASE_IMAGE_NAME /bin/bash
+  docker run -p 9000:9000 -it --name tracr-$ROLE tracr-app /bin/bash
 else
-	# Run the container normally and with the appropriate port mapping
-	docker run -p 3001:3000 --name "$BASE_IMAGE_NAME-instance" $BASE_IMAGE_NAME
+  docker run -p 9000:9000 --name tracr-$ROLE tracr-app $CMD
 fi
