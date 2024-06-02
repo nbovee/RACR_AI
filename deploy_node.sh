@@ -45,9 +45,9 @@ docker build -t tracr-app .
 
 # Set the command based on the role
 if [ "$ROLE" = "observer" ]; then
-  CMD="python src/tracr/app_api/deploy.py"
+  CMD="python src/app_api/deploy.py"
 elif [ "$ROLE" = "dummy" ]; then
-  CMD="python src/tracr/experiment_design/services/basic_split_inference.py"
+  CMD="python src/experiment_design/services/basic_split_inference.py"
 else
   echo "Invalid role: $ROLE. Please provide either 'observer' or 'dummy'."
   exit 1

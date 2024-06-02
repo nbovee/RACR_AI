@@ -4,16 +4,11 @@ FROM python:3.11.7
 # Set the working directory
 WORKDIR /usr/src/tracr/
 
-# Copy the requirements file into the container
-COPY ./requirements.txt .
-
-# Install dependencies and libGL
-RUN apt-get update && \
-    apt-get install -y libgl1-mesa-glx && \
-    pip install --no-cache-dir -r requirements.txt
-
 # Copy the rest of the application code into the container
 COPY . .
+
+# Install tracr package and its dependencies from the local source
+RUN pip install .
 
 # Expose the necessary ports
 EXPOSE 9000
