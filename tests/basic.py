@@ -1,4 +1,5 @@
 import tracr
+import tracr.app_api.utils as utils
 
 
 def test_import():
@@ -19,6 +20,21 @@ def test_version():
         print(f"Version attribute missing: {e}")
 
 
+def test_functions():
+    try:
+        ip = utils.get_local_ip()
+        print(f"Local IP: {ip}")
+
+        repo_root = utils.get_repo_root()
+        print(f"Repo root: {repo_root}")
+
+        registery_up = utils.registry_server_is_up()
+        print(f"Register server is up: {registery_up}")
+    except AttributeError as e:
+        print(f"Function missing: {e}")
+
+
 if __name__ == "__main__":
     test_import()
     test_version()
+    test_functions()
