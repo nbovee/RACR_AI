@@ -18,9 +18,9 @@ from rich.console import Console
 from rich.table import Table
 from time import sleep
 
-from src.app_api import log_handling, utils
-from src.app_api.device_mgmt import DeviceMgr
-from src.app_api.experiment_mgmt import Experiment, ExperimentManifest
+from tracr.app_api import log_handling, utils
+from tracr.app_api.device_mgmt import DeviceMgr
+from tracr.app_api.experiment_mgmt import Experiment, ExperimentManifest
 
 
 PROJECT_ROOT = utils.get_repo_root()

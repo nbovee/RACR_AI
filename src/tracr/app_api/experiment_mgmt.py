@@ -14,11 +14,11 @@ from time import sleep
 from typing import Union
 from datetime import datetime
 
-import src.experiment_design.tasks.tasks as tasks
-import src.app_api.utils as utils
-import src.app_api.device_mgmt as dm
-from src.app_api.deploy import ZeroDeployedServer
-from src.experiment_design.services.base import ObserverService
+import tracr.experiment_design.tasks.tasks as tasks
+import tracr.app_api.utils as utils
+import tracr.app_api.device_mgmt as dm
+from tracr.app_api.deploy import ZeroDeployedServer
+from tracr.experiment_design.services.base import ObserverService
 
 
 # overwrite default rpyc configs to allow pickling and public attribute access

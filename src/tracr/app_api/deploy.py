@@ -9,9 +9,9 @@ from plumbum import SshMachine, local, CommandNotFound
 from plumbum.path import copy
 from plumbum.commands.base import BoundCommand
 
-import src.app_api.device_mgmt as dm
-import src.app_api.utils as utils
-
+from tracr.app_api import device_mgmt as dm
+from tracr.app_api import utils
+print("Imports successful")
 
 logger = logging.getLogger("tracr_logger")
 
@@ -111,15 +111,15 @@ m = import_module(server_module)
 ServerCls = getattr(m, server_class)
 
 if model_class and model_module:
-    logger.info(f"Importing {model_class} from src.experiment_design.models.{model_module}.")
-    m = import_module(f"src.experiment_design.models.{model_module}")
+    logger.info(f"Importing {model_class} from experiment_design.models.{model_module}.")
+    m = import_module(f"experiment_design.models.{model_module}")
     Model = getattr(m, model_class)
 else:
     logger.info("Using default model (AlexNet)")
     Model = None
 
-logger.info(f"Importing {ps_class} from src.experiment_design.services.{ps_module}.")
-m = import_module(f"src.experiment_design.services.{ps_module}")
+logger.info(f"Importing {ps_class} from experiment_design.services.{ps_module}.")
+m = import_module(f"experiment_design.services.{ps_module}")
 CustomParticipantService = getattr(m, ps_class)
 
 # One way to programmatically set the service's formal name
@@ -185,8 +185,8 @@ class ZeroDeployedServer(DeployedServer):
         rpyc_root = local.path(rpyc.__file__).up()
         copy(rpyc_root, tmp / "rpyc")
 
-        src_root = local.path(utils.get_repo_root() / "src")
-        copy(src_root, tmp / "src")
+        src_root = local.path(utils.get_repo_root() / "src" / "tracr")
+        copy(src_root, tmp / "src" / "tracr")
 
         # Substitute placeholders in the remote script and send it over
         script = (tmp / "deployed-rpyc.py")

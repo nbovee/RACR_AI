@@ -1,9 +1,6 @@
 # Use an official Python runtime as a parent image
 FROM python:3.11.7
 
-# Set the working directory
-WORKDIR /usr/src/tracr/
-
 # Copy the rest of the application code into the container
 COPY . .
 

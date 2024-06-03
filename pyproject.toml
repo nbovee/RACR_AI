@@ -19,15 +19,17 @@ classifiers = [
 ]
 
 dependencies = [
-    "blosc2==2.6.2",
+    "blosc2==2.5.1",
     "bpython==0.24",
     "cmake==3.29.3",
     "getmac==0.9.4",
     "lit==18.1.6",
     "oyaml==1.0",
+    "pandas==2.0.3",
     "paramiko==3.4.0",
     "rich==13.7.1",
     "rpyc==6.0.0",
+    "setuptools==65.5.0",
 ]
 
 [project.urls]

@@ -1,7 +1,7 @@
 from pathlib import Path
 from torch.utils.data import Dataset
 
-from src.app_api.utils import get_repo_root
+from tracr.app_api.utils import get_repo_root
 
 
 class BaseDataset(Dataset):
