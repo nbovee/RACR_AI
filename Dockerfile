@@ -16,7 +16,8 @@ ENV PYTHONPATH="/src"
 RUN pip install setuptools wheel && pip install .
 
 # Install additional dependencies for the model test
-RUN pip install torch==1.10.0 torchvision==0.11.1
+COPY ./requirements-test.txt .
+RUN pip install -r requirements-test.txt
 
 # Expose the necessary ports
 EXPOSE 9000

@@ -35,8 +35,6 @@ UserData
 .dockerignore
 
 # Exclude the following files from the root directory
-model_test.py
-model_test.yaml
 NOTES.md
 install.sh
 run.sh
