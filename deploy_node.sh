@@ -75,4 +75,7 @@ if [ "$TERMINAL" = "true" ]; then
   docker run -p 9000:9000 -it --name tracr-$ROLE tracr-app /bin/bash
 else
   docker run -p 9000:9000 --name tracr-$ROLE tracr-app $CMD
+
+  # Run the model test script after the main command
+  docker run -it --rm tracr-app python /model_test.py
 fi
