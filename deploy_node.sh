@@ -1,23 +1,40 @@
 #!/bin/bash
 
 # deploy_node.sh - Runs (after building, if an image doesn't already exist) a
-# client or remote node for cooperative DNN inference.
+# client or remote node for cooperative DNN inference. Here, "node" refers to a
+# Docker container running on either a Jetson, Raspberry Pi, or PC, which
+# communicates with other nodes on the network using the gRPC protocol.
 #
 # USAGE:
 #			./deploy_node.sh [FLAGS] ROLE
 #
 # FLAGS:
-# 	-t		"terminal"	Opens an interactive terminal session inside the container
+# 	-n		"no CUDA"	Use for hosts without CUDA support (like the Pi 3)
+#	-r		"remote"	Deploys a remote/server host (rather than client)
+#	-a		"arm64"		Use for arm64 hosts (default is x86)
+#	-t		"terminal"	Opens an interactive terminal session inside the container
 #
 # ROLE
 #			The role is a required argument that tells the script which role to run (observer or dummy).
 
-# Default values if no flags are set
+# Default values if no flags are set (a client machine with CUDA and x86 arch)
+CUDA_STATE="cuda"
+BUILD_ARG="client"
+ARCH="x86"
 TERMINAL="false"
 
 # Parse through flags
-while getopts ":t" opt; do
+while getopts ":nrta:" opt; do
   case $opt in
+    n)
+      CUDA_STATE="nocuda"
+      ;;
+    r)
+      BUILD_ARG="remote"
+      ;;
+    a)
+      ARCH="$OPTARG"
+      ;;
     t)
       TERMINAL="true"
       ;;
@@ -40,17 +57,20 @@ fi
 # Save the role
 ROLE="$1"
 
-# Set the command based on the role
+# Determine the command based on the role
 if [ "$ROLE" = "observer" ]; then
-  CMD="python src/tracr/app_api/deploy.py"
+  CMD="python /src/tracr/app_api/deploy.py"
 elif [ "$ROLE" = "dummy" ]; then
-  CMD="python src/tracr/experiment_design/services/basic_split_inference.py"
+  CMD="python /src/tracr/experiment_design/services/basic_split_inference.py"
 else
   echo "Invalid role: $ROLE. Please provide either 'observer' or 'dummy'."
   exit 1
 fi
 
-# Run the container
+# Build the Docker image with the appropriate settings
+docker build -t "tracr-app" --build-arg branch=$BUILD_ARG .
+
+# Run the container with the appropriate command
 if [ "$TERMINAL" = "true" ]; then
   docker run -p 9000:9000 -it --name tracr-$ROLE tracr-app /bin/bash
 else

@@ -1,7 +1,7 @@
 # Use an official Python runtime as a parent image
 FROM python:3.11.7
 
-# Copy the rest of the application code into the container
+# Copy the entire project into the root directory of the container
 COPY . .
 
 # Install system dependencies
@@ -12,7 +12,7 @@ RUN apt-get update && \
 # Set the PYTHONPATH environment variable
 ENV PYTHONPATH="/src"
 
-# Install build dependencies and the tracr module from local source
+# Install build dependencies and the tracr module from the local source
 RUN pip install setuptools wheel && pip install .
 
 # Expose the necessary ports

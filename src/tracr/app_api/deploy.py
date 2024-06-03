@@ -11,7 +11,6 @@ from plumbum.commands.base import BoundCommand
 
 from tracr.app_api import device_mgmt as dm
 from tracr.app_api import utils
-print("Imports successful")
 
 logger = logging.getLogger("tracr_logger")
 
