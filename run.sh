@@ -32,8 +32,7 @@ if [ "$ROLE" = "observer" ]; then
 elif [ "$ROLE" = "dummy" ]; then
   CMD="python /app/src/tracr/experiment_design/services/basic_split_inference.py"
 else
-  echo "Invalid role: $ROLE. Please provide either 'observer' or 'dummy'."
-  exit 1
+  CMD="python /app/app.py $ROLE"
 fi
 
 # Run container

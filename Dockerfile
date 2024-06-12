@@ -1,6 +1,9 @@
 # Use an official Python runtime as a parent image
 FROM python:3.11.7
 
+# Set the working directory
+WORKDIR /app
+
 # Copy the entire project into the container at /app
 COPY . /app
 

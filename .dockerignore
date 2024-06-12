@@ -36,5 +36,3 @@ UserData
 
 # Exclude the following files from the root directory
 NOTES.md
-install.sh
-run.sh
