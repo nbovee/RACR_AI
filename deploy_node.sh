@@ -6,16 +6,16 @@
 # communicates with other nodes on the network using the gRPC protocol.
 #
 # USAGE:
-#			./deploy_node.sh [FLAGS] ROLE
+#           ./deploy_node.sh [FLAGS] ROLE
 #
 # FLAGS:
-# 	-n		"no CUDA"	Use for hosts without CUDA support (like the Pi 3)
-#	-r		"remote"	Deploys a remote/server host (rather than client)
-#	-a		"arm64"		Use for arm64 hosts (default is x86)
-#	-t		"terminal"	Opens an interactive terminal session inside the container
+#   -n      "no CUDA"    Use for hosts without CUDA support (like the Pi 3)
+#   -r      "remote"     Deploys a remote/server host (rather than client)
+#   -a      "arm64"      Use for arm64 hosts (default is x86)
+#   -t      "terminal"   Opens an interactive terminal session inside the container
 #
 # ROLE
-#			The role is a required argument that tells the script which role to run (observer or dummy).
+#           The role is a required argument that tells the script which role to run (observer or dummy).
 
 # Default values if no flags are set (a client machine with CUDA and x86 arch)
 CUDA_STATE="cuda"
@@ -59,9 +59,9 @@ ROLE="$1"
 
 # Determine the command based on the role
 if [ "$ROLE" = "observer" ]; then
-  CMD="python /src/tracr/app_api/deploy.py"
+  CMD="python /app/src/tracr/app_api/deploy.py"
 elif [ "$ROLE" = "dummy" ]; then
-  CMD="python /src/tracr/experiment_design/services/basic_split_inference.py"
+  CMD="python /app/src/tracr/experiment_design/services/basic_split_inference.py"
 else
   echo "Invalid role: $ROLE. Please provide either 'observer' or 'dummy'."
   exit 1
@@ -74,5 +74,5 @@ docker build -t "tracr-app" --build-arg branch=$BUILD_ARG .
 if [ "$TERMINAL" = "true" ]; then
   docker run -p 9000:9000 -it --name tracr-$ROLE tracr-app /bin/bash
 else
-  docker run -p 9000:9000 --name tracr-$ROLE tracr-app $CMD
+  docker run -p 9000:9000 --name tracr-$ROLE tracr-app $ROLE $CMD
 fi

@@ -16,6 +16,7 @@ class SSHAuthenticationException(Exception):
     Raised if an authentication error occurs while attempting to connect to a device over SSH, but
     the device is available and listening.
     """
+
     def __init__(self, message):
         super().__init__(message)
 
@@ -25,6 +26,7 @@ class DeviceUnavailableException(Exception):
     Raised if an attempt is made to connect to a device that is either unavailable or not
     listening on the specified port.
     """
+
     def __init__(self, message):
         super().__init__(message)
 
@@ -33,6 +35,7 @@ class LAN:
     """
     Helps with general networking tasks that are not specific to one host.
     """
+
     LOCAL_CIDR_BLOCK: list[str] = [
         str(ip) for ip in ipaddress.ip_network("192.168.1.0/24").hosts()
     ]
@@ -262,6 +265,7 @@ class DeviceMgr:
     Manages a collection of SSHConnectionParams objects. Responsible for reading and writing serialized
     instances to/from the persistent datafile.
     """
+
     DATAFILE_PATH: pathlib.Path = (
         utils.get_repo_root() / "AppData" / "known_devices.yaml"
     )

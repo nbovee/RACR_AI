@@ -7,11 +7,12 @@ install_torch() {
 }
 
 # Check if the observer node is being run and do not install torch if it is
-if [[ "$1" == "python" && "$2" == "/src/tracr/app_api/deploy.py" ]]; then
+if [[ "$1" == "observer" ]]; then
   echo "Running observer node without installing torch."
 else
   install_torch
 fi
 
-# Execute the passed command
+# Shift out the first argument (role) and execute the remaining command
+shift
 exec "$@"
