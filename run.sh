@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 TRACR_IMAGE_NAME="tracr-app"
 ROOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
@@ -20,7 +22,7 @@ else
 fi
 
 # Determine the command based on the arguments
-if [ "$1" = "experiment" ] && [ "$2" = "run" ]; then
+if [ "$1" = "experiment" ] && [ "$2" = "run" ] && [ -n "$3" ]; then
     EXPERIMENT_NAME=$3
     CMD="python -m tracr.app_api.deploy experiment run $EXPERIMENT_NAME"
 elif [ "$1" = "observer" ] || [ "$1" = "participant" ]; then
