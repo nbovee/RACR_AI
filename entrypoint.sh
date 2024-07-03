@@ -2,8 +2,8 @@
 
 # Function to install torch and torchvision if needed
 install_torch() {
-  echo "Installing torch and torchvision..."
-  pip install torch==1.10.0 torchvision==0.11.1
+  echo "Installing torch, torchvision, torchinfo, ultralytics ..."
+  pip install torch torchvision torchinfo ultralytics
 }
 
 # Check the role and install dependencies accordingly
