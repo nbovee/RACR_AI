@@ -27,11 +27,7 @@ if [ "$1" = "experiment" ] && [ "$2" = "run" ] && [ -n "$3" ]; then
     CMD="python -m tracr.app_api.deploy experiment run $EXPERIMENT_NAME"
 elif [ "$1" = "observer" ] || [ "$1" = "participant" ]; then
     ROLE=$1
-    if [ "$ROLE" = "observer" ]; then
-        CMD="python -m tracr.app_api.deploy"
-    elif [ "$ROLE" = "participant" ]; then
-        CMD="python -m tracr.experiment_design.services.basic_split_inference"
-    fi
+    CMD="$ROLE"
 else
     echo "Invalid command. Usage: ./run.sh [observer|participant] or ./run.sh experiment run <EXPERIMENT_NAME>"
     exit 1
@@ -39,4 +35,4 @@ fi
 
 # Run container
 echo "Running container from $TRACR_IMAGE_NAME..."
-docker run -p $RLOG_SERVER_PORT:9000 -it --name tracr-container --net=host -v ${HOST_VOLUME_PATH}:${CONTAINER_VOLUME_PATH} "$TRACR_IMAGE_NAME" $CMD
+docker run -p $RLOG_SERVER_PORT:9000 -it --rm --name tracr-container --net=host -v ${HOST_VOLUME_PATH}:${CONTAINER_VOLUME_PATH} "$TRACR_IMAGE_NAME" $CMD
