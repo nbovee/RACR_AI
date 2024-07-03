@@ -50,7 +50,7 @@ shift $((OPTIND-1))
 
 # Check if a role was provided
 if [ $# -eq 0 ]; then
-    echo "No role provided. Please provide a role (observer or dummy) as a non-option argument."
+    echo "No role provided. Please provide a role (observer or participant) as a non-option argument."
     exit 1
 fi
 
@@ -59,11 +59,11 @@ ROLE="$1"
 
 # Determine the command based on the role
 if [ "$ROLE" = "observer" ]; then
-  CMD="python /app/src/tracr/app_api/deploy.py"
-elif [ "$ROLE" = "dummy" ]; then
-  CMD="python /app/src/tracr/experiment_design/services/basic_split_inference.py"
+  CMD="python -m tracr.app_api.deploy"
+elif [ "$ROLE" = "participant" ]; then
+  CMD="python -m tracr.experiment_design.services.basic_split_inference"
 else
-  echo "Invalid role: $ROLE. Please provide either 'observer' or 'dummy'."
+  echo "Invalid role: $ROLE. Please provide either 'observer' or 'participant'."
   exit 1
 fi
 

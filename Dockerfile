@@ -12,8 +12,11 @@ RUN apt-get update && \
     apt-get install -y libgl1-mesa-glx openssh-client openssh-server && \
     rm -rf /var/lib/apt/lists/*
 
-# Install build dependencies and the tracr module from the local source
-RUN pip install setuptools wheel && pip install /app
+# Install build dependencies
+RUN pip install --upgrade pip setuptools wheel
+
+# Install the tracr package from local source
+RUN pip install -e /app
 
 # Expose the necessary ports
 EXPOSE 9000
