@@ -19,23 +19,22 @@ else
     echo "Image $TRACR_IMAGE_NAME exists."
 fi
 
-# Determine the role and command
-ROLE=$1
-if [ -z "$ROLE" ]; then
-    echo "No role provided. Please provide a role (observer or participant) as a non-option argument."
+# Determine the command based on the arguments
+if [ "$1" = "experiment" ] && [ "$2" = "run" ]; then
+    EXPERIMENT_NAME=$3
+    CMD="python -m tracr.app_api.deploy experiment run $EXPERIMENT_NAME"
+elif [ "$1" = "observer" ] || [ "$1" = "participant" ]; then
+    ROLE=$1
+    if [ "$ROLE" = "observer" ]; then
+        CMD="python -m tracr.app_api.deploy"
+    elif [ "$ROLE" = "participant" ]; then
+        CMD="python -m tracr.experiment_design.services.basic_split_inference"
+    fi
+else
+    echo "Invalid command. Usage: ./run.sh [observer|participant] or ./run.sh experiment run <EXPERIMENT_NAME>"
     exit 1
 fi
 
-# Determine the command based on the role
-if [ "$ROLE" = "observer" ]; then
-  CMD="python -m tracr.app_api.deploy"
-elif [ "$ROLE" = "participant" ]; then
-  CMD="python -m tracr.experiment_design.services.basic_split_inference"
-else
-  echo "Invalid role: $ROLE. Please provide either 'observer' or 'participant'."
-  exit 1
-fi
-
 # Run container
-echo "Running container from $TRACR_IMAGE_NAME with role $ROLE..."
-docker run -p $RLOG_SERVER_PORT:9000 -it --name tracr-$ROLE --net=host -v ${HOST_VOLUME_PATH}:${CONTAINER_VOLUME_PATH} "$TRACR_IMAGE_NAME" $ROLE $CMD
+echo "Running container from $TRACR_IMAGE_NAME..."
+docker run -p $RLOG_SERVER_PORT:9000 -it --name tracr-container --net=host -v ${HOST_VOLUME_PATH}:${CONTAINER_VOLUME_PATH} "$TRACR_IMAGE_NAME" $CMD
