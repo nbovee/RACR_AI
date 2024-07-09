@@ -1,1 +1,1 @@
-alias tracr="bash run.sh"
+alias tracr_run="bash run.sh"

@@ -14,12 +14,11 @@ from time import sleep
 from typing import Union
 from datetime import datetime
 
-import tracr.experiment_design.tasks.tasks as tasks
-import tracr.app_api.utils as utils
-import tracr.app_api.device_mgmt as dm
-from tracr.app_api.deploy import ZeroDeployedServer
+import utils
+import device_mgmt as dm
+from deploy import ZeroDeployedServer
+from tracr.experiment_design.tasks import tasks
 from tracr.experiment_design.services.base import ObserverService
-
 
 # overwrite default rpyc configs to allow pickling and public attribute access
 rpyc.core.protocol.DEFAULT_CONFIG["allow_pickle"] = True
