@@ -19,5 +19,10 @@ RUN pip install -r requirements.participant.txt
 # Copy the entire project into the container
 COPY . /app/
 
+# Set PYTHONPATH
+ENV PYTHONPATH /app/src/
+
 # Expose the necessary ports
 EXPOSE 9000
+
+CMD ["python", "app.py"]

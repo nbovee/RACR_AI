@@ -14,9 +14,9 @@ from time import sleep
 from typing import Union
 from datetime import datetime
 
-import utils
-import device_mgmt as dm
-from deploy import ZeroDeployedServer
+from tracr.app_api import utils
+from tracr.app_api import device_mgmt as dm
+from tracr.app_api.deploy import ZeroDeployedServer
 from tracr.experiment_design.tasks import tasks
 from tracr.experiment_design.services.base import ObserverService
 

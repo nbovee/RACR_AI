@@ -9,8 +9,8 @@ from plumbum import SshMachine, local, CommandNotFound
 from plumbum.path import copy
 from plumbum.commands.base import BoundCommand
 
-import device_mgmt as dm
-import utils
+from tracr.app_api import device_mgmt as dm
+from tracr.app_api import utils
 
 logger = logging.getLogger("tracr_logger")
 
