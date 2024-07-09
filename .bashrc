@@ -1,1 +1,1 @@
-alias tracr="bash /mnt/d/github/RACR_AI/run.sh"
+alias tracr="bash run.sh"

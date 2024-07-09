@@ -26,11 +26,11 @@ HomePi4:
   connection_params:
     - host: pi-4.fios-router.home
       user: joe22
-      pkey_fp: /usr/src/tracr/AppData/pkeys/id_rsa
+      pkey_fp: /app/AppData/pkeys/id_rsa
       default: true
     - host: home-pi.duckdns.org
       user: joe22
-      pkey_fp: /usr/src/tracr/AppData/pkeys/id_rsa
+      pkey_fp: /app/AppData/pkeys/id_rsa
       default: false
 
 RACRJnano4gb-1:
@@ -38,5 +38,5 @@ RACRJnano4gb-1:
   connection_params:
     - host: 192.168.1.212
       user: racr
-      pkey_fp: /usr/src/tracr/AppData/pkeys/id_rsa
+      pkey_fp: /app/AppData/pkeys/id_rsa
       default: true

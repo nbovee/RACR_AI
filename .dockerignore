@@ -10,6 +10,7 @@ dist
 __pycache__
 *.pyc
 *.pyo
+*.pyd
 
 # Exclude IDE/editor-specific files
 .idea
@@ -26,13 +27,7 @@ __pycache__
 Thumbs.db
 
 # Exclude other unnecessary files and directories
-AppData
-MyData
 tests
-UserData
-
-# Exclude the .dockerignore file itself
-.dockerignore
 
 # Exclude the following files from the root directory
 NOTES.md
