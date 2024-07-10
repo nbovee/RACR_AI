@@ -25,4 +25,4 @@ ENV PYTHONPATH /app/src/
 # Expose the necessary ports
 EXPOSE 9000
 
-CMD ["python", "app.py"]
+CMD ["python", "/app/app.py"]

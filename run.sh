@@ -18,16 +18,19 @@ ROOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 # Volume mapping
 HOST_VOLUME_PATH="$ROOT_DIR"
-CONTAINER_VOLUME_PATH="/app/"
+CONTAINER_VOLUME_PATH="/app"
 
 # Port mappings
 RLOG_SERVER_PORT=9000
 RPC_REGISTRY_SERVER_PORT=18812
 
+# Dockerfile based on the device type
+DOCKERFILE="Dockerfile.${DEVICE_TYPE}"
+
 # Check if image exists
 if ! docker image inspect "$TRACR_IMAGE_NAME" > /dev/null 2>&1; then
     echo "Image $TRACR_IMAGE_NAME does not exist. Building it now..."
-    docker build -f "Dockerfile.${DEVICE_TYPE}" -t "$TRACR_IMAGE_NAME" "$ROOT_DIR"
+    docker build -f "$DOCKERFILE" -t "$TRACR_IMAGE_NAME" "$ROOT_DIR"
 else
     echo "Image $TRACR_IMAGE_NAME exists."
 fi
