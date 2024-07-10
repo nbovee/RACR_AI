@@ -18,10 +18,10 @@ from time import sleep
 from typing import Callable
 from rpyc.utils.factory import DiscoveryError
 
-import tracr.experiment_design.tasks.tasks as tasks
-from tracr.experiment_design.models.model_hooked import WrappedModel
-from tracr.experiment_design.datasets.dataset import BaseDataset
-from tracr.experiment_design.records.master_dict import MasterDict
+import src.tracr.experiment_design.tasks.tasks as tasks
+from src.tracr.experiment_design.models.model_hooked import WrappedModel
+from src.tracr.experiment_design.datasets.dataset import BaseDataset
+from src.tracr.experiment_design.records.master_dict import MasterDict
 
 
 logger = logging.getLogger("tracr_logger")
@@ -247,7 +247,7 @@ class ObserverService(NodeService):
         """
         Allows remote nodes to access datasets stored on the observer as if they were local objects.
         """
-        module = import_module(f"tracr.experiment_design.datasets.{dataset_module}")
+        module = import_module(f"src.tracr.experiment_design.datasets.{dataset_module}")
         dataset = getattr(module, dataset_instance)
         return dataset
 

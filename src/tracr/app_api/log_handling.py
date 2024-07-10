@@ -8,7 +8,7 @@ import pickle
 import threading
 from rich.console import Console
 
-from tracr.app_api import utils
+from src.tracr.app_api import utils
 
 
 MAIN_LOG_FP = utils.get_repo_root() / "AppData" / "app.log"

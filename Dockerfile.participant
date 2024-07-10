@@ -20,7 +20,7 @@ RUN pip install -r requirements.participant.txt
 COPY . /app/
 
 # Set PYTHONPATH
-ENV PYTHONPATH /app/src/
+# ENV PYTHONPATH /app/src/
 
 # Expose the necessary ports
 EXPOSE 9000
