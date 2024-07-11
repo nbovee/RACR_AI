@@ -1,10 +1,11 @@
 import tracr
 import tracr.app_api.utils as utils
+from importlib.util import find_spec
 
 
 def test_import():
     try:
-        import tracr
+        find_spec("tracr")
 
         print("Import successful")
     except ImportError as e:

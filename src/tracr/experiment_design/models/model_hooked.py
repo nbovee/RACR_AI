@@ -262,6 +262,7 @@ class WrappedModel(torch.nn.Module):
                 self.banked_input[fixed_layer_i] = layer_input
                 raise HookExitException(self.banked_input)
             logger.debug(f"end posthook {fixed_layer_i}")
+            return hook_output
 
         return hook
 
