@@ -8,7 +8,7 @@ import rpyc.core.protocol
 from pandas import DataFrame
 from rpyc.utils.classic import obtain
 from rpyc.lib.compat import pickle
-import torch.nn as nn
+# import torch.nn as nn
 from queue import PriorityQueue
 from importlib import import_module
 from rpyc.core.protocol import Connection, PingError
@@ -320,10 +320,10 @@ class ParticipantService(NodeService):
 
     def __init__(
         self,
-        ModelCls: type[nn.Module] | None,
+        # ModelCls: type[nn.Module] | None,
     ):
         super().__init__()
-        self.ModelCls = ModelCls
+        # self.ModelCls = ModelCls
         self.task_map = {
             tasks.SimpleInferenceTask: self.simple_inference,
             tasks.SingleInputInferenceTask: self.inference_sequence_per_input,
@@ -337,14 +337,14 @@ class ParticipantService(NodeService):
         observer_svc = self.get_connection("OBSERVER").root
         assert observer_svc is not None
         master_dict = observer_svc.get_master_dict()
-        if not isinstance(self.ModelCls, nn.Module):
-            self.model = WrappedModel(master_dict=master_dict, node_name=self.node_name)
-        else:
-            self.model = WrappedModel(
-                pretrained=self.ModelCls(),
-                master_dict=master_dict,
-                node_name=self.node_name,
-            )
+        # if not isinstance(self.ModelCls, nn.Module):
+        self.model = WrappedModel(master_dict=master_dict, node_name=self.node_name)
+        # else:
+        #     self.model = WrappedModel(
+        #         pretrained=self.ModelCls(),
+        #         master_dict=master_dict,
+        #         node_name=self.node_name
+        #     )
 
     def _run(self):
         assert self.status == "ready"
