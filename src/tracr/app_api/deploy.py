@@ -88,7 +88,7 @@ class ZeroDeployedServer(DeployedServer):
                     break
             if not cmd:
                 logger.warning(
-                    f"Had to use the default python interpreter, which could cause problems."
+                    "Had to use the default python interpreter, which could cause problems."
                 )
                 cmd = self.remote_machine.python
 

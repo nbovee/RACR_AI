@@ -11,7 +11,6 @@ the word "python".
 
 import logging
 
-logger = logging.getLogger("tracr_logger")
 
 import argparse
 from rich.console import Console
@@ -22,6 +21,7 @@ from src.tracr.app_api import log_handling, utils
 from src.tracr.app_api.device_mgmt import DeviceMgr
 from src.tracr.app_api.experiment_mgmt import Experiment, ExperimentManifest
 
+logger = logging.getLogger("tracr_logger")
 
 PROJECT_ROOT = utils.get_repo_root()
 CURRENT_VERSION = "0.3.0"
