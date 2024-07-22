@@ -1,8 +1,34 @@
+"""utils and interface for the model hook wrapper"""
+
+from typing import Any
+
 import logging
 import os
 
+from torchvision import models
+from ultralytics import YOLO
+
 import numpy as np
 import yaml
+
+
+class NotDict:
+    """Wrapper for a dict to circumenvent some of Ultralytics forward pass handling. Uses a class instead of tuple in case additional handling is added later."""
+
+    def __init__(self, passed_dict) -> None:
+        self.inner_dict = passed_dict
+
+    def __call__(self, *args: Any, **kwds: Any) -> Any:
+        return self.inner_dict
+
+
+class HookExitException(Exception):
+    """Exception to early exit from inference in naive running."""
+
+    def __init__(self, out, *args: object) -> None:
+        super().__init__(*args)
+        self.result = out
+
 
 logger = logging.getLogger("tracr_logger")
 
@@ -44,3 +70,17 @@ def __read_yaml_data(path, participant_key):
         settings.model_name = settings.get("model_name", "alexnet").lower().strip()
 
     return settings
+
+
+"""module to tie in implemented models"""
+
+
+def model_selector(model_name):
+    if "alexnet" in model_name:
+        return models.alexnet(weights="DEFAULT")
+    elif "yolo" in model_name:
+        return YOLO(
+            str(model_name) + ".pt"
+        ).model  # pop the real model out of their wrapper for now
+    else:
+        raise NotImplementedError

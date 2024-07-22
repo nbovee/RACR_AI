@@ -3,4 +3,6 @@ yolo:
   hook_style: post # must be done at the end of a layer due to the internal results catalog
 alexnet:
   depth: 2
-  hook_style: pre # must be done before starting the NEXT layer to catch non-torch.nn operations
+  hook_style: post
+  # obseleting the pre hook style
+  # hook_style: pre # must be done before starting the NEXT layer to catch non-torch.nn operations
