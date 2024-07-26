@@ -6,7 +6,7 @@ import logging
 import os
 
 from torchvision import models
-from ultralytics import YOLO
+import importlib
 
 import numpy as np
 import yaml
@@ -79,8 +79,10 @@ def model_selector(model_name):
     if "alexnet" in model_name:
         return models.alexnet(weights="DEFAULT")
     elif "yolo" in model_name:
-        return YOLO(
-            str(model_name) + ".pt"
-        ).model  # pop the real model out of their wrapper for now
+        try:
+            ultralytics = importlib.import_module('ultralytics')
+            return ultralytics.YOLO(str(model_name) + ".pt").model
+        except ImportError:
+            print("Python is not installed.")
     else:
         raise NotImplementedError
