@@ -45,7 +45,7 @@ def run_inference(layer_num):
     hook = layer.register_forward_hook(hook_fn)
 
     # Load and preprocess the test image
-    test_image_path = "./car2.jpg"
+    test_image_path = "./car4.jpg"
     input_tensor, original_image = load_image(test_image_path)
     
     # Normalize input_tensor to range [0, 1]
